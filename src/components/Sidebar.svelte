@@ -3,13 +3,37 @@
   import { signOut } from '../lib/auth.js'
   import { router } from '../lib/router.svelte.js'
   import { COURSE_TREE } from '../data/day0-content.js'
+  import { COURSE_CONTENT } from '../data/course-content.js'
 
-  let { completedSteps = [], simpleMode = false, onToggleSimpleMode } = $props()
+  let {
+    completedSteps = [],
+    simpleMode = false,
+    onToggleSimpleMode,
+    progressMap = {},
+    gates = []
+  } = $props()
   let expandedPhase = $state('phase-0')
   let expandedLesson = $state('day-0')
+  let expandedCoursePhase = $state(1)
 
   function isStepDone(stepId) {
     return Array.isArray(completedSteps) && completedSteps.includes(stepId)
+  }
+
+  function unitCodeFor(unit) {
+    return unit.id === 0 ? 'day-0' : `lesson-${unit.id}`
+  }
+
+  function unitRoute(unit) {
+    return unit.id === 0 ? '#/lesson/day-0' : `#/lesson/${unit.id}`
+  }
+
+  function unitStatus(unit) {
+    return progressMap[unitCodeFor(unit)] || null
+  }
+
+  function gateFor(phaseNo) {
+    return gates.find((g) => g.phase === phaseNo) || null
   }
 </script>
 
@@ -73,10 +97,80 @@
       {/if}
     </nav>
 
-    <!-- درخت سه‌سطحی: فاز ← درس ← مرحله -->
+    <!-- فهرست کامل دوره — ۸ فاز، ۵۵ واحد (فاز ۲) -->
     <div class="space-y-2">
       <p class="text-[11px] font-bold text-[var(--ink-soft)] px-2">
-        مسیر دوره (فاز ← درس ← مرحله)
+        همهٔ درس‌ها — ۸ فاز، ۵۵ واحد
+      </p>
+
+      {#each COURSE_CONTENT.phases as phase}
+        {@const gate = gateFor(phase.phase)}
+        <div class="rounded-xl border border-[var(--line)] bg-white/55 p-2 space-y-1.5">
+          <button
+            type="button"
+            class="w-full text-right px-2 py-1.5 rounded-lg text-xs font-extrabold flex items-center justify-between cursor-pointer hover:bg-white/70"
+            onclick={() =>
+              (expandedCoursePhase = expandedCoursePhase === phase.phase ? 0 : phase.phase)}
+          >
+            <span>فاز {phase.phase} — {phase.displayTitle}</span>
+            <span class="text-[var(--ink-soft)]">
+              {expandedCoursePhase === phase.phase ? '▾' : '◂'}
+            </span>
+          </button>
+          <p class="px-2 text-[10px] text-[var(--ink-soft)]">
+            {#if gate?.avg === null}
+              دروازه: هنوز آزمونی ثبت نشده
+            {:else if gate.open}
+              دروازه باز — میانگین بهترین نمره‌ها {gate.avg.toFixed(1)}٪
+            {:else}
+              دروازه بسته — میانگین بهترین نمره‌ها {gate.avg.toFixed(1)}٪ (نیاز: ۶۰٫۰٪)
+            {/if}
+          </p>
+
+          {#if expandedCoursePhase === phase.phase}
+            <div class="ps-2 border-s-2 border-amber-300/70 space-y-1">
+              {#each COURSE_CONTENT.units.filter((u) => u.phase === phase.phase) as unit}
+                {@const st = unitStatus(unit)}
+                {@const active =
+                  router.path === unitRoute(unit).slice(1) ||
+                  (unit.id === 0 && router.path === '/lesson/day-0')}
+                <button
+                  type="button"
+                  class="w-full text-right px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer hover:bg-white/80"
+                  class:bg-[var(--amber-soft)]={active}
+                  class:text-[var(--amber-dark)]={active}
+                  class:font-bold={active}
+                  onclick={() => router.go(unitRoute(unit))}
+                >
+                  <span class="truncate">{unit.code} — {unit.title}</span>
+                  {#if st === 'completed'}
+                    <span class="text-emerald-600 font-bold shrink-0" title="تکمیل‌شده">✓</span>
+                  {:else if st === 'in_progress'}
+                    <span class="text-amber-600 font-bold shrink-0" title="در حال انجام">•</span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/each}
+
+      <!-- تکلیف پایانی روز ۴۰ -->
+      <button
+        type="button"
+        class="w-full text-right px-3 py-2 rounded-xl text-xs font-extrabold cursor-pointer hover:bg-white/80 border border-[var(--line)] bg-white/55"
+        class:bg-[var(--amber-soft)]={router.path === '/capstone'}
+        class:text-[var(--amber-dark)]={router.path === '/capstone'}
+        onclick={() => router.go('#/capstone')}
+      >
+        کپستون نهایی روز ۴۰
+      </button>
+    </div>
+
+    <!-- درخت سه‌سطحی روز ۰: فاز ← درس ← مرحله -->
+    <div class="space-y-2">
+      <p class="text-[11px] font-bold text-[var(--ink-soft)] px-2">
+        مسیر روز ۰ (فاز ← درس ← مرحله)
       </p>
 
       {#each COURSE_TREE as phase}

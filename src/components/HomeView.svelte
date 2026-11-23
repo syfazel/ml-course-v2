@@ -2,20 +2,9 @@
   import { auth } from '../lib/auth-store.svelte.js'
   import { router } from '../lib/router.svelte.js'
   import { DAY0_LESSON } from '../data/day0-content.js'
+  import { COURSE_CONTENT } from '../data/course-content.js'
 
-  let { day0Progress = null, latestQuiz = null } = $props()
-
-  // نقشهٔ راه — نام‌های قفل‌شدهٔ ۸ فاز (تیک گام ۲، ۲۴ نوامبر ۰۰:۳۶)
-  const PHASES = [
-    { n: 1, title: 'یادگیری با نظارت: رگرسیون و طبقه‌بندی' },
-    { n: 2, title: 'الگوریتم‌های پیشرفتهٔ یادگیری' },
-    { n: 3, title: 'یادگیری بدون نظارت، پیشنهاددهنده و تقویتی' },
-    { n: 4, title: 'شبکه‌های عصبی و یادگیری عمیق' },
-    { n: 5, title: 'بهبود شبکه‌های عمیق: بهینه‌سازی و تنظیم' },
-    { n: 6, title: 'ساختاردهی پروژه‌های یادگیری ماشین' },
-    { n: 7, title: 'شبکه‌های کانولوشنی: دیدن با ماشین' },
-    { n: 8, title: 'مدل‌های توالی و ترنسفورمر' }
-  ]
+  let { day0Progress = null, latestQuiz = null, allProgress = [], gates = [] } = $props()
 
   let completedCount = $derived(
     Array.isArray(day0Progress?.completed_steps)
@@ -26,6 +15,25 @@
   let isDay0Done = $derived(
     day0Progress?.status === 'completed' || completedCount >= totalSteps
   )
+
+  let completedUnits = $derived(
+    allProgress.filter((p) => p.status === 'completed').length
+  )
+
+  // اولین واحد ناتمام (روز ۰ اول، بعد ۱ تا ۵۴)
+  let nextUnit = $derived.by(() => {
+    if (!isDay0Done) return COURSE_CONTENT.units[0]
+    for (let i = 1; i < COURSE_CONTENT.units.length; i++) {
+      const code = `lesson-${i}`
+      const row = allProgress.find((p) => p.unit_code === code)
+      if (!row || row.status !== 'completed') return COURSE_CONTENT.units[i]
+    }
+    return null
+  })
+
+  function gateFor(phaseNo) {
+    return gates.find((g) => g.phase === phaseNo) || null
+  }
 
   let nextAction = $derived.by(() => {
     if (auth.isTeacher) {
@@ -54,11 +62,21 @@
         target: '#/quiz/quiz-day-0'
       }
     }
+    if (nextUnit) {
+      const route = nextUnit.id === 0 ? '#/lesson/day-0' : `#/lesson/${nextUnit.id}`
+      return {
+        label: `درس بعدی: ${nextUnit.code} — ${nextUnit.title}`,
+        description: `روز ۰ و آزمون نمونه‌اش کامل شد. ${COURSE_CONTENT.units.length} واحد در دوره است و تا اینجا ${completedUnits} واحد کامل شده است.`,
+        cta: 'رفتن به درس بعدی',
+        target: route
+      }
+    }
     return {
-      label: 'اسکلت فاز ۱ با موفقیت گذرانده شد',
-      description: `آخرین نمره دقیق شما ${latestQuiz.score_percent}٪ بوده و دروازه ۶۰٪ باز شده است. آماده انتقال درس‌های فاز ۲ هستید.`,
-      cta: 'مرور دوباره درس روز ۰',
-      target: '#/lesson/day-0'
+      label: 'همهٔ ۵۵ واحد کامل شد',
+      description:
+        'دوره کامل شد؛ حالا تکلیف پایانی روز ۴۰ (کپستون نهایی) در انتظار است.',
+      cta: 'رفتن به کپستون نهایی',
+      target: '#/capstone'
     }
   })
 </script>
@@ -76,7 +94,7 @@
 
   <!-- سلام -->
   <header class="space-y-1">
-    <p class="text-xs font-bold text-[var(--amber-dark)]">خانه دوره — اسکلت فاز ۱</p>
+    <p class="text-xs font-bold text-[var(--amber-dark)]">خانه دوره — محتوای کامل فاز ۲ (۵۵ واحد)</p>
     <h1 class="text-2xl sm:text-3xl font-extrabold">
       سلام، {auth.member?.display_name || 'کاربر گرامی'}
     </h1>
@@ -93,7 +111,7 @@
       <span class="badge bg-[var(--amber)] text-white border-0 font-bold">قدم بعدی</span>
       {#if !auth.isTeacher}
         <span class="text-xs text-[var(--ink-soft)]">
-          پیشرفت روز ۰: {completedCount} از {totalSteps} مرحله
+          پیشرفت کل دوره: {completedUnits} از {COURSE_CONTENT.units.length} واحد کامل — روز ۰: {completedCount} از {totalSteps} مرحله
         </span>
       {/if}
     </div>
@@ -182,24 +200,41 @@
     </article>
   </div>
 
-  <!-- نقشهٔ راه — ۸ فاز (کاورها نهایی‌اند؛ محتوای فازها در فاز ۲ می‌آید) -->
+  <!-- نقشهٔ راه — ۸ فاز با وضعیت دروازه -->
   <section class="space-y-4">
     <div class="flex flex-wrap items-baseline justify-between gap-2">
       <h2 class="text-lg font-extrabold">نقشهٔ راه دوره — ۸ فاز</h2>
-      <span class="text-xs text-[var(--ink-soft)]">کاورها نهایی‌اند؛ محتوای فازها در فاز ۲ می‌آید</span>
+      <span class="text-xs text-[var(--ink-soft)]">دروازهٔ هر فاز با میانگین دقیق بهترین نمره‌های آزمون‌های آن فاز (۶۰٫۰٪) باز می‌شود</span>
     </div>
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {#each PHASES as phase}
+      {#each COURSE_CONTENT.phases as phase}
+        {@const gate = gateFor(phase.phase)}
         <article class="glass-card overflow-hidden">
           <img
-            src={`covers/cover-phase${phase.n}.jpg`}
-            alt={`کاور فاز ${phase.n} — ${phase.title}`}
+            src={`covers/cover-phase${phase.phase}.jpg`}
+            alt={`کاور فاز ${phase.phase} — ${phase.displayTitle}`}
             class="aspect-video w-full object-cover"
             loading="lazy"
           />
-          <div class="space-y-1 p-4">
-            <span class="text-xs font-bold text-[var(--terracotta)]">فاز {phase.n}</span>
-            <h3 class="text-sm font-extrabold leading-6">{phase.title}</h3>
+          <div class="space-y-2 p-4">
+            <span class="text-xs font-bold text-[var(--terracotta)]">فاز {phase.phase}</span>
+            <h3 class="text-sm font-extrabold leading-6">{phase.displayTitle}</h3>
+            <p class="text-[11px] text-[var(--ink-soft)] leading-5">
+              {#if gate?.avg === null}
+                دروازه: هنوز آزمونی ثبت نشده
+              {:else if gate.open}
+                دروازه باز — میانگین {gate.avg.toFixed(1)}٪ ({gate.attempted} از {gate.total} آزمون)
+              {:else}
+                دروازه بسته — میانگین {gate.avg.toFixed(1)}٪، نیاز: ۶۰٫۰٪ ({gate.attempted} از {gate.total} آزمون)
+              {/if}
+            </p>
+            <button
+              type="button"
+              class="btn-ml-ghost text-xs w-full"
+              onclick={() => router.go(`#/lesson/${phase.lessonFrom}`)}
+            >
+              شروع فاز {phase.phase}
+            </button>
           </div>
         </article>
       {/each}

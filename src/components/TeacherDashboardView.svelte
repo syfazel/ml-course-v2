@@ -2,10 +2,13 @@
   import { onMount } from 'svelte'
   import { auth } from '../lib/auth-store.svelte.js'
   import { fetchTeacherDashboardData } from '../lib/course-api.js'
+  import { computeGates } from '../lib/gates.js'
 
   let loading = $state(true)
   let error = $state(null)
   let dashboard = $state(null)
+
+  let gates = $derived(dashboard ? computeGates(dashboard.quizzes) : [])
 
   async function load() {
     loading = true
@@ -103,6 +106,34 @@
           </p>
         </div>
       </div>
+
+      <!-- وضعیت دروازه‌های ۸ فاز -->
+      <section class="paper-card p-5 space-y-3">
+        <h2 class="text-sm font-extrabold">وضعیت دروازه‌های ۸ فاز (میانگین دقیق بهترین نمره‌ها — ۶۰٫۰٪)</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {#each gates as g}
+            <div
+              class="rounded-xl border p-3"
+              class:border-emerald-300={g.open}
+              class:bg-emerald-50={g.open}
+              class:border-[var(--line)]={!g.open}
+            >
+              <p class="text-xs font-extrabold">فاز {g.phase} — {g.displayTitle}</p>
+              <p class="text-xs mt-1">
+                {#if g.avg === null}
+                  هنوز آزمونی ثبت نشده
+                {:else}
+                  میانگین: <strong dir="ltr">{g.avg.toFixed(1)}٪</strong> — {g.open ? 'باز' : 'بسته'}
+                  ({g.attempted} از {g.total} آزمون)
+                {/if}
+              </p>
+            </div>
+          {/each}
+        </div>
+        <p class="text-[11px] text-[var(--ink-soft)]">
+          قفل سخت روی درس‌های فاز بعد در فاز ۲ پیاده نشده است؛ دروازه‌ها فعلاً وضعیت‌اند و تصمیم دربارهٔ قفل با استاد است.
+        </p>
+      </section>
 
       <!-- جدول پیشرفت درس -->
       <section class="paper-card p-5 space-y-3">

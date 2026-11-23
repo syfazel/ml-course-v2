@@ -63,6 +63,33 @@ export async function saveDayProgress({ unitCode = 'day-0', completedSteps = [],
   return { data, error: null }
 }
 
+// ---------- همهٔ ردیف‌های پیشرفت (فاز ۲: سایدبار + دروازه‌ها) ----------
+export async function fetchAllDayProgress() {
+  if (!sb || !auth.canOperate) return { data: [], error: null }
+  const { data, error } = await sb
+    .from('day_progress')
+    .select('id, user_id, unit_code, status, completed_steps, score_exact, started_at, completed_at, updated_at')
+    .order('unit_code', { ascending: true })
+  if (error) {
+    return { data: [], error: handleApiError(error, 'خواندن پیشرفت درس‌ها ناموفق بود.') }
+  }
+  return { data: data || [], error: null }
+}
+
+// ---------- همهٔ تلاش‌های آزمون (فاز ۲: دروازه‌ها) ----------
+export async function fetchAllQuizAttempts() {
+  if (!sb || !auth.canOperate) return { data: [], error: null }
+  const { data, error } = await sb
+    .from('quiz_answers')
+    .select('id, user_id, quiz_code, attempt_no, answers, correct_count, total_questions, score_percent, passed_gate, created_at')
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (error) {
+    return { data: [], error: handleApiError(error, 'خواندن سابقه آزمون‌ها ناموفق بود.') }
+  }
+  return { data: data || [], error: null }
+}
+
 // ---------- ثبت رویداد یادگیری شاگرد (events) ----------
 export async function logLearningEvent(eventType, unitCode = 'day-0', payload = {}) {
   if (!sb || !auth.canOperate || !auth.isStudent) return
@@ -137,7 +164,7 @@ export async function fetchTeacherDashboardData() {
         .from('quiz_answers')
         .select('id, user_id, quiz_code, attempt_no, correct_count, total_questions, score_percent, passed_gate, created_at')
         .order('created_at', { ascending: false })
-        .limit(20),
+        .limit(100),
       sb
         .from('mistakes')
         .select('id, user_id, quiz_code, question_index, selected_option, concept_tag, reviewed, created_at')

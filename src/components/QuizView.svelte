@@ -1,11 +1,14 @@
 <script>
   import { auth } from '../lib/auth-store.svelte.js'
-  import { QUIZ_DAY0 } from '../data/quiz-day0.js'
   import { submitQuizAttempt, logLearningEvent } from '../lib/course-api.js'
 
-  let { attempts = [], onAttemptSubmitted } = $props()
+  // نمای عمومی آزمون — روز ۰ و ۲۷ آزمون نمره‌دار فاز ۲ از همین نما استفاده می‌کنند.
+  // quiz: { quizCode, unitCode, title, description, questions: [{ index, concept, prompt, options: [{ label, note? }] }] }
+  // گزینه‌ها در آزمون‌های نمره‌دار هیچ توضیحی ندارند (کلید فقط سرور است)؛
+  // فقط آزمون نمونهٔ روز ۰ توضیح گزینه دارد.
+  let { quiz, attempts = [], onAttemptSubmitted } = $props()
 
-  let selected = $state(Array(QUIZ_DAY0.questions.length).fill(null))
+  let selected = $state(Array(quiz.questions.length).fill(null))
   let submitting = $state(false)
   let result = $state(null)
   let errorMessage = $state(null)
@@ -25,14 +28,14 @@
     errorMessage = null
     submitting = true
     try {
-      const res = await submitQuizAttempt(QUIZ_DAY0.quizCode, selected)
+      const res = await submitQuizAttempt(quiz.quizCode, selected)
       if (res.error) {
         errorMessage = res.error
         return
       }
       result = res.data
-      void logLearningEvent('quiz_submitted_ui', QUIZ_DAY0.unitCode, {
-        quiz_code: QUIZ_DAY0.quizCode,
+      void logLearningEvent('quiz_submitted_ui', quiz.unitCode, {
+        quiz_code: quiz.quizCode,
         attempt_no: res.data?.attempt_no,
         score_percent: res.data?.score_percent,
         passed_gate: res.data?.passed_gate
@@ -56,9 +59,9 @@
         دروازه دقیق ۶۰٫۰٪
       </span>
     </div>
-    <h1 class="text-2xl font-extrabold">{QUIZ_DAY0.title}</h1>
+    <h1 class="text-2xl font-extrabold">{quiz.title}</h1>
     <p class="text-xs text-[var(--ink-soft)] leading-6">
-      {QUIZ_DAY0.description} هیچ کلید پاسخی در مرورگر نگهداری نمی‌شود و اشتباه‌ها به‌صورت خودکار برای مرور و داشبورد استاد ثبت می‌گردند.
+      {quiz.description} هیچ کلید پاسخی در مرورگر نگهداری نمی‌شود و اشتباه‌ها به‌صورت خودکار برای مرور و داشبورد استاد ثبت می‌گردند.
     </p>
 
     {#if auth.isTeacher}
@@ -97,14 +100,20 @@
         <strong>{result.total_questions}</strong> — نمره دقیق بدون گردکردن:
         <strong dir="ltr">{result.score_percent}%</strong>
       </p>
-      <p class="text-xs text-[var(--ink-soft)]">
-        توضیح یک‌جمله‌ای هر گزینه اکنون در زیر سؤالات نمایش داده شده است.
-      </p>
+      {#if quiz.questions[0]?.options[0]?.note}
+        <p class="text-xs text-[var(--ink-soft)]">
+          توضیح یک‌جمله‌ای هر گزینه اکنون در زیر سؤالات نمایش داده شده است.
+        </p>
+      {:else}
+        <p class="text-xs text-[var(--ink-soft)]">
+          برای مرور اشتباه‌ها، به درس برگردید؛ استاد هم اشتباه‌ها را در داشبورد می‌بیند.
+        </p>
+      {/if}
     </section>
   {/if}
 
   <form class="space-y-4" onsubmit={handleSubmit}>
-    {#each QUIZ_DAY0.questions as q, qIdx}
+    {#each quiz.questions as q, qIdx}
       <fieldset class="paper-card p-5 space-y-3">
         <div class="flex items-center justify-between gap-2">
           <legend class="text-sm sm:text-base font-extrabold">
@@ -134,7 +143,7 @@
                 />
                 <div class="space-y-1">
                   <span class="text-sm font-medium block">{opt.label}</span>
-                  {#if result || auth.isTeacher}
+                  {#if (result || auth.isTeacher) && opt.note}
                     <span class="text-xs text-[var(--ink-soft)] block">
                       توضیح گزینه: {opt.note}
                     </span>
@@ -151,8 +160,8 @@
       <div class="glass-card p-4 flex flex-wrap items-center justify-between gap-3">
         <span class="text-xs text-[var(--ink-soft)]">
           {allAnswered
-            ? 'همه ۶ سؤال پاسخ داده شدند. آماده ارسال به سرور.'
-            : 'برای ثبت آزمون، به هر ۶ سؤال پاسخ دهید.'}
+            ? `همه ${quiz.questions.length} سؤال پاسخ داده شدند. آماده ارسال به سرور.`
+            : `برای ثبت آزمون، به هر ${quiz.questions.length} سؤال پاسخ دهید.`}
         </span>
         <button
           type="submit"
