@@ -1,0 +1,48 @@
+# بکاپ هفتگی دیتابیس Supabase پروژه ml-course-v2
+#
+# وضعیت: ورک‌فلو نوشته شده ولی راز SUPABASE_DB_PASSWORD هنوز در ریپو تنظیم نشده است؛
+# تا وقتی راز تنظیم نشود، این ورک‌فلو با خطا می‌ماند (عمداً — رمز دیتابیس هیچ‌جا ثبت نشده
+# و نباید در چت، فایل یا لاگ بیاید).
+#
+# فعال‌سازی (فقط یاسین):
+#   ۱) اگر رمز دیتابیس را داری:  gh secret set SUPABASE_DB_PASSWORD --repo syfazel/ml-course-v2
+#      (رمز را تایپ کن؛ در ترمینال نمایش داده نمی‌شود)
+#   ۲) اگر رمز را نداری: در داشبورد Supabase پروژه ml-course-v2 ← Settings ← Database
+#      ← Reset database password → رمز تازه را بگیر، بعد همان دستور بالا را بزن.
+#   ۳) بعد از تنظیم راز، از تب Actions همین ورک‌فلو را با Run workflow یک بار دستی اجرا کن
+#      تا مطمئن شوی بکاپ گرفته می‌شود؛ بعد از آن هفتگی خودکار است.
+name: backup
+
+on:
+  schedule:
+    - cron: '0 5 * * 0' # هر یکشنبه، ساعت ۰۵:۰۰ UTC (~۰۸:۳۰ تهران)
+  workflow_dispatch: {}
+
+jobs:
+  pg-dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: pg_dump (custom format)
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "$PGPASSWORD" ]; then
+            echo "SUPABASE_DB_PASSWORD is not set — see the header of this workflow file." >&2
+            exit 1
+          fi
+          mkdir -p backup
+          docker run --rm \
+            -e PGPASSWORD="$PGPASSWORD" \
+            -v "$PWD/backup:/backup" \
+            postgres:16 \
+            pg_dump \
+              -h aws-0-eu-central-1.pooler.supabase.com -p 6543 \
+              -U postgres.awznimzcsmpaadvqwodg -d postgres \
+              -F c -f /backup/ml-course-v2-$(date +%Y%m%d).dump
+          ls -la backup/
+      - name: Upload dump as artifact (30 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-course-v2-db-backup
+          path: backup/*.dump
+          retention-days: 30
