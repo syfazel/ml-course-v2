@@ -81,8 +81,22 @@ export async function initAuth() {
     return () => {}
   }
 
-  if (typeof window !== 'undefined' && window.location.hash === '#/reset-password') {
-    auth.recoveryMode = true
+  if (typeof window !== 'undefined') {
+    // تشخیص فرود بازیابی رمز، مستقل از رویداد PASSWORD_RECOVERY (که ممکن است
+    // پیش از ثبت اشتراک شلیک شده باشد): هش #/reset-password، یا ?code= در
+    // نشانی (پیوند PKCE)، یا type=recovery در هش (پیوند توکن ضمنی).
+    // نکته: پیوند بازیابیِ فرستاده‌شده از داشبورد Supabase با کلاینت PKCE
+    // کار نمی‌کند، چون code_verifier فقط در مرورگری ذخیره می‌شود که درخواست
+    // بازیابی از همان‌جا (فرم «فراموشی رمز» سایت) فرستاده شده باشد؛ پس
+    // بازیابی همیشه باید از خود سایت آغاز شود، نه از داشبورد.
+    const url = new URL(window.location.href)
+    const isRecoveryLanding =
+      window.location.hash === '#/reset-password' ||
+      url.searchParams.has('code') ||
+      window.location.hash.includes('type=recovery')
+    if (isRecoveryLanding) {
+      auth.recoveryMode = true
+    }
   }
 
   const deps = {
@@ -129,7 +143,13 @@ export async function initAuth() {
     const { data } = await sb.auth.getSession()
     if (data?.session?.user) {
       stashSession(data.session)
-      await deps.onUser(data.session.user)
+      if (auth.recoveryMode) {
+        // نشست از پیوند بازیابی آمده، نه از ورود عادی: فرم تعیین رمز تازه
+        // نشان داده شود، نه خانه.
+        await deps.onRecovery(data.session)
+      } else {
+        await deps.onUser(data.session.user)
+      }
     } else {
       const recovered = await recoverStashedSession(sb)
       if (recovered?.user) {
