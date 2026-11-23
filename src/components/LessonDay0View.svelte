@@ -67,6 +67,14 @@
 
 <div class="space-y-6">
   <header class="glass-card p-5 sm:p-6 space-y-2">
+    <div class="overflow-hidden rounded-xl border border-[var(--glass-border)]">
+      <img
+        src="covers/cover-day0.jpg"
+        alt="کاور روز ۰ — جهت‌یابی و نقشهٔ راه دوره"
+        class="aspect-[21/9] w-full object-cover"
+        loading="eager"
+      />
+    </div>
     <div class="flex flex-wrap items-center justify-between gap-2">
       <span class="text-xs font-bold text-[var(--amber-dark)]">فاز ۰ ← روز ۰</span>
       <span class="badge bg-[var(--amber-soft)] text-[var(--amber-dark)] border-0">
@@ -134,7 +142,7 @@
           {/if}
         </div>
 
-        <div class="space-y-2.5 text-sm leading-8 text-[var(--ink)]">
+        <div class="space-y-2.5 text-[17px] leading-[2] text-[var(--ink)] sm:text-[18px]">
           {#each step.body as paragraph}
             <p>{paragraph}</p>
           {/each}

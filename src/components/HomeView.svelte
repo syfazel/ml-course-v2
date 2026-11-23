@@ -5,6 +5,18 @@
 
   let { day0Progress = null, latestQuiz = null } = $props()
 
+  // نقشهٔ راه — نام‌های قفل‌شدهٔ ۸ فاز (تیک گام ۲، ۲۴ نوامبر ۰۰:۳۶)
+  const PHASES = [
+    { n: 1, title: 'یادگیری با نظارت: رگرسیون و طبقه‌بندی' },
+    { n: 2, title: 'الگوریتم‌های پیشرفتهٔ یادگیری' },
+    { n: 3, title: 'یادگیری بدون نظارت، پیشنهاددهنده و تقویتی' },
+    { n: 4, title: 'شبکه‌های عصبی و یادگیری عمیق' },
+    { n: 5, title: 'بهبود شبکه‌های عمیق: بهینه‌سازی و تنظیم' },
+    { n: 6, title: 'ساختاردهی پروژه‌های یادگیری ماشین' },
+    { n: 7, title: 'شبکه‌های کانولوشنی: دیدن با ماشین' },
+    { n: 8, title: 'مدل‌های توالی و ترنسفورمر' }
+  ]
+
   let completedCount = $derived(
     Array.isArray(day0Progress?.completed_steps)
       ? day0Progress.completed_steps.length
@@ -52,6 +64,16 @@
 </script>
 
 <div class="space-y-6">
+  <!-- بنر کاور اصلی -->
+  <div class="overflow-hidden rounded-3xl border border-[var(--glass-border)] shadow-[0_8px_24px_rgba(30,25,22,0.06)]">
+    <img
+      src="covers/cover-hero.jpg"
+      alt="کاور اصلی دوره یادگیری ماشین"
+      class="h-44 w-full object-cover sm:h-64"
+      loading="eager"
+    />
+  </div>
+
   <!-- سلام -->
   <header class="space-y-1">
     <p class="text-xs font-bold text-[var(--amber-dark)]">خانه دوره — اسکلت فاز ۱</p>
@@ -66,7 +88,7 @@
   </header>
 
   <!-- کارت «قدم بعدی» تمام‌عرض -->
-  <section class="glass-card p-6 sm:p-7 space-y-4">
+  <section class="glass-card next-step-card p-6 sm:p-7 space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <span class="badge bg-[var(--amber)] text-white border-0 font-bold">قدم بعدی</span>
       {#if !auth.isTeacher}
@@ -105,6 +127,14 @@
   <!-- کارت درس بعدی + وضعیت آزمون -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <article class="glass-card p-5 space-y-3">
+      <div class="overflow-hidden rounded-xl border border-[var(--glass-border)]">
+        <img
+          src="covers/cover-day0.jpg"
+          alt="کاور روز ۰ — جهت‌یابی و نقشهٔ راه دوره"
+          class="aspect-video w-full object-cover"
+          loading="lazy"
+        />
+      </div>
       <div class="flex items-center justify-between">
         <span class="text-xs font-bold text-[var(--ink-soft)]">درس بعدی در مسیر</span>
         <span class="badge badge-sm bg-[var(--amber-soft)] text-[var(--amber-dark)] border-0">
@@ -151,4 +181,28 @@
       </button>
     </article>
   </div>
+
+  <!-- نقشهٔ راه — ۸ فاز (کاورها نهایی‌اند؛ محتوای فازها در فاز ۲ می‌آید) -->
+  <section class="space-y-4">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="text-lg font-extrabold">نقشهٔ راه دوره — ۸ فاز</h2>
+      <span class="text-xs text-[var(--ink-soft)]">کاورها نهایی‌اند؛ محتوای فازها در فاز ۲ می‌آید</span>
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {#each PHASES as phase}
+        <article class="glass-card overflow-hidden">
+          <img
+            src={`covers/cover-phase${phase.n}.jpg`}
+            alt={`کاور فاز ${phase.n} — ${phase.title}`}
+            class="aspect-video w-full object-cover"
+            loading="lazy"
+          />
+          <div class="space-y-1 p-4">
+            <span class="text-xs font-bold text-[var(--terracotta)]">فاز {phase.n}</span>
+            <h3 class="text-sm font-extrabold leading-6">{phase.title}</h3>
+          </div>
+        </article>
+      {/each}
+    </div>
+  </section>
 </div>

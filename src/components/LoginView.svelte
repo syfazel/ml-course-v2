@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte'
   import { auth } from '../lib/auth-store.svelte.js'
   import { isSupabaseConfigured } from '../lib/supabase.js'
   import {
@@ -16,6 +17,18 @@
   let confirmPassword = $state('')
   let busy = $state(false)
   let feedback = $state(null) // { text, kind }
+  let videoEl = $state(null)
+
+  onMount(() => {
+    // احترام به reduced-motion: ویدیوی ورودی متوقف می‌ماند
+    if (
+      videoEl &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      videoEl.pause()
+    }
+  })
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -64,7 +77,24 @@
   }
 </script>
 
-<div class="min-h-screen flex items-center justify-center p-4">
+<div class="min-h-screen flex flex-col items-center justify-center gap-5 p-4 py-8">
+  <!-- ویدیوی ورودی (Veo، حلقه، بی‌صدا) + کاور اصلی به‌عنوان پوستر -->
+  <div class="w-full max-w-md overflow-hidden rounded-3xl border border-[var(--glass-border)] shadow-[0_8px_24px_rgba(30,25,22,0.06)]">
+    <video
+      bind:this={videoEl}
+      class="entry-video aspect-video"
+      autoplay
+      muted
+      loop
+      playsinline
+      preload="metadata"
+      poster="covers/cover-hero.jpg"
+    >
+      <source src="covers/video-entry-veo-v1.mp4" type="video/mp4" />
+      مرورگر شما ویدیو را پخش نمی‌کند.
+    </video>
+  </div>
+
   <div class="glass-card w-full max-w-md p-6 sm:p-8 space-y-6">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">

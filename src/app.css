@@ -2,43 +2,77 @@
 @plugin "daisyui";
 
 /* ============================================================================
-   توکن‌های طراحی گرم + شیشه‌ای اقتباس‌شده از sclack_A (راست‌به‌چپ فارسی)
+   هویت بصری «آتلیهٔ علمیِ گرم» — توکن‌های معنایی (مرحلهٔ ۳، قفل‌شده)
+   مبنا: files/hoviyat-basari-ml.md — کنتراست‌ها با فرمول WCAG محاسبه شده‌اند.
+   فونت‌ها خودمیزبان‌اند (public/fonts)؛ @font-face در index.html است تا مسیر
+   نسبی نسبت به سند درست حل شود (base './').
    ============================================================================ */
 :root {
-  --bg-warm: #fdf8ef;
-  --bg-warm-2: #f8eedd;
-  --bg-warm-3: #f0e2c8;
-  --ink: #1f1b16;
-  --ink-soft: #6b5e50;
-  --amber: #d97706;
-  --amber-dark: #b45309;
-  --amber-soft: #fef3c7;
-  --coral: #e05a47;
-  --coral-soft: #fee2e2;
-  --line: rgba(120, 92, 60, 0.16);
+  /* بوم */
+  --surface-canvas: #faf7f2;
+  --surface-subtle: #f1eae0;
+  --bg-warm: #faf7f2;
+  --bg-warm-2: #f1eae0;
+  --bg-warm-3: #e9ddcb;
 
-  /* شیشه دو سطح (کروم/کارت ملایم + مودال/کارت ویژه) */
-  --glass-tint: rgba(255, 251, 244, 0.72);
-  --glass-tint-strong: rgba(255, 252, 247, 0.86);
-  --glass-border: rgba(255, 255, 255, 0.78);
-  --glass-shadow: 0 10px 28px rgba(120, 78, 32, 0.08);
+  /* متن */
+  --ink: #1e1916;
+  --text-primary: #1e1916;
+  --ink-soft: #5c524b;
+  --text-secondary: #5c524b;
+
+  /* کنش و وضعیت */
+  --terracotta: #b8421f;
+  --action-instructive: #b8421f;
+  --amber: #b8421f;
+  --amber-dark: #8f3418;
+  --amber-soft: #f7e3da;
+  --patina: #166b5e;
+  --status-mastered: #166b5e;
+  --gate-red: #b3261e;
+  --status-gate-alert: #b3261e;
+  --coral: #b3261e;
+  --coral-soft: #fbe3e1;
+  --saffron: #b5720a;
+  --status-streak: #b5720a;
+  --saffron-text: #8a5a06;
+  --status-streak-text: #8a5a06;
+
+  --line: rgba(62, 47, 36, 0.12);
+  --surface-border-bronze: rgba(62, 47, 36, 0.12);
+
+  /* شیشه — آلفای کارت ۰٫۸۲، کف سخت ۰٫۷۰ */
+  --surface-glass-card: rgba(255, 252, 247, 0.82);
+  --glass-tint: rgba(255, 252, 247, 0.82);
+  --glass-tint-strong: rgba(255, 252, 247, 0.88);
+  --glass-border: rgba(62, 47, 36, 0.12);
+  --glass-shadow: 0 8px 24px rgba(30, 25, 22, 0.06);
+  --glass-shadow-strong: 0 12px 32px rgba(30, 25, 22, 0.1);
   --glass-blur: 12px;
+
+  /* کد */
+  --surface-lab-code: #1d1a18;
+  --code-ink: #ede6da;
 }
 
 body {
-  font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+  font-family: 'Vazirmatn', 'Inter', Tahoma, 'Segoe UI', sans-serif;
   color: var(--ink);
-  background-color: var(--bg-warm);
+  background-color: var(--surface-canvas);
   line-height: 1.85;
 }
 
+.font-code {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
 .warm-mesh {
-  background-color: var(--bg-warm);
+  background-color: var(--surface-canvas);
   background-image:
-    radial-gradient(circle at 12% 14%, rgba(217, 119, 6, 0.14), transparent 36%),
-    radial-gradient(circle at 86% 18%, rgba(224, 90, 71, 0.11), transparent 34%),
-    radial-gradient(circle at 50% 92%, rgba(245, 158, 11, 0.12), transparent 40%),
-    linear-gradient(160deg, var(--bg-warm) 0%, var(--bg-warm-2) 100%);
+    radial-gradient(circle at 12% 14%, rgba(184, 66, 31, 0.07), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(22, 107, 94, 0.06), transparent 34%),
+    radial-gradient(circle at 50% 92%, rgba(181, 114, 10, 0.06), transparent 40%),
+    linear-gradient(160deg, var(--surface-canvas) 0%, var(--surface-subtle) 100%);
   background-attachment: fixed;
 }
 
@@ -56,10 +90,16 @@ body {
   border-radius: 1rem;
 }
 
+/* کارت «قدم بعدی» — سایهٔ قوی‌تر + نوار ۲px تراکوتا در سمت شروع (راست در RTL) */
+.next-step-card {
+  box-shadow: var(--glass-shadow-strong), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  border-inline-start: 2px solid var(--terracotta);
+}
+
 .paper-card {
   background: rgba(255, 253, 249, 0.96);
   border: 1px solid var(--line);
-  box-shadow: 0 4px 16px rgba(120, 78, 32, 0.05);
+  box-shadow: 0 4px 16px rgba(30, 25, 22, 0.05);
   border-radius: 1rem;
 }
 
@@ -95,47 +135,66 @@ html.simple-mode .glass-card {
   }
 }
 
-/* دکمه اصلی ۴۴px منطبق با زبان طراحی sclack_A */
+/* دکمه اصلی ۴۴px — تراکوتای یکدست (هویت مرحلهٔ ۳) */
 .btn-ml-primary {
   min-height: 44px;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--amber) 0%, var(--coral) 100%);
+  background: var(--terracotta);
   color: #ffffff;
   font-weight: 700;
   border: none;
   padding-inline: 1.25rem;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition: transform 120ms ease, opacity 120ms ease, background-color 120ms ease;
 }
 
 .btn-ml-primary:hover:not(:disabled) {
-  opacity: 0.94;
+  background: #a63a1b;
 }
 
 .btn-ml-primary:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: translateY(1px);
 }
 
 .btn-ml-primary:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-ml-primary:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
 }
 
 .btn-ml-ghost {
   min-height: 44px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--glass-tint);
   color: var(--ink);
-  border: 1px solid var(--line);
+  border: 1px solid var(--glass-border);
   font-weight: 500;
   padding-inline: 1rem;
-  transition: background-color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .btn-ml-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 252, 247, 0.95);
+  border-color: rgba(62, 47, 36, 0.25);
 }
 
-/* لوگوی چهار نقطه گرم sclack_A */
+.btn-ml-ghost:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
+}
+
+/* ویدیوی ورودی — پرکنندهٔ قاب، بدون حاشیه */
+.entry-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* لوگوی چهار نقطه — رنگ‌های هویت (تراکوتا، پاتینه، برنج، زعفرانی) */
 .four-dots {
   display: inline-flex;
   gap: 5px;
@@ -146,7 +205,21 @@ html.simple-mode .glass-card {
   height: 8px;
   border-radius: 9999px;
 }
-.four-dots span:nth-child(1) { background: #f59e0b; }
-.four-dots span:nth-child(2) { background: #d97706; }
-.four-dots span:nth-child(3) { background: #ea580c; }
-.four-dots span:nth-child(4) { background: #e05a47; }
+.four-dots span:nth-child(1) { background: #b8421f; }
+.four-dots span:nth-child(2) { background: #166b5e; }
+.four-dots span:nth-child(3) { background: #c08a3e; }
+.four-dots span:nth-child(4) { background: #b5720a; }
+
+/* جشن آرام ۶۰۰ms — رشتهٔ نور طلایی روی کارت (فاز ۲)؛ با reduced-motion حذف می‌شود */
+@keyframes gold-sweep {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+.gold-sweep {
+  animation: gold-sweep 600ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gold-sweep {
+    animation: none;
+  }
+}

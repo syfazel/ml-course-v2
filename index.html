@@ -3,13 +3,76 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="دوره یادگیری ماشین — نسخه دوم؛ ورود بسته ویژه استاد و شاگرد" />
+    <meta name="theme-color" content="#faf7f2" />
     <title>دوره یادگیری ماشین — نسخه دوم (اسکلت فاز ۱)</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preload" as="image" href="covers/cover-hero.jpg" />
+    <style>
+      /* فونت‌های خودمیزبان (public/fonts) — مسیر نسبی نسبت به سند، تا با base './' درست حل شود */
+      @font-face {
+        font-family: 'Vazirmatn';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/vazirmatn-arabic-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Vazirmatn';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url('fonts/vazirmatn-arabic-500.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Vazirmatn';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('fonts/vazirmatn-arabic-700.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Vazirmatn';
+        font-style: normal;
+        font-weight: 800;
+        font-display: swap;
+        src: url('fonts/vazirmatn-arabic-800.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/inter-latin-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url('fonts/inter-latin-500.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('fonts/inter-latin-600.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'JetBrains Mono';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/jetbrains-mono-latin-400.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'JetBrains Mono';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('fonts/jetbrains-mono-latin-600.woff2') format('woff2');
+      }
+    </style>
   </head>
   <body class="warm-mesh min-h-screen antialiased">
     <div id="app"></div>
