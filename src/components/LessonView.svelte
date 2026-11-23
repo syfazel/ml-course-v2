@@ -3,6 +3,7 @@
   import { router } from '../lib/router.svelte.js'
   import { COURSE_CONTENT } from '../data/course-content.js'
   import { saveDayProgress, logLearningEvent } from '../lib/course-api.js'
+  import LabView from './LabView.svelte'
 
   // نمای عمومی درس — واحدهای ۱ تا ۵۴ (روز ۰ نمای خودش را دارد).
   let { lesson, progress = null, onProgressUpdated } = $props()
@@ -19,6 +20,9 @@
   let teachBack = $state({ concept: '', example: '', trap: '' })
 
   let phase = $derived(COURSE_CONTENT.phases.find((p) => p.phase === lesson.phase) || null)
+  let unitVideos = $derived(
+    (COURSE_CONTENT.videos || []).filter((v) => v.unit === lesson.id)
+  )
   let quizCode = $derived(lesson.graded ? `quiz-${Math.floor(lesson.id / 2)}-B` : null)
   let prevUnit = $derived(lesson.id > 0 ? COURSE_CONTENT.units[lesson.id - 1] : null)
   let nextUnit = $derived(
@@ -179,6 +183,28 @@
     {/each}
   </div>
 
+  <!-- ویدیوها (یوتیوب + زیرنویس فارسی) -->
+  {#if unitVideos.length}
+    <section class="space-y-3">
+      <h2 class="text-lg font-extrabold">ویدیوهای این درس ({unitVideos.length})</h2>
+      <div class="grid grid-cols-1 gap-3">
+        {#each unitVideos as v}
+          <button
+            type="button"
+            class="paper-card p-4 flex items-start justify-between gap-3 text-right cursor-pointer hover:shadow-[0_8px_24px_rgba(30,25,22,0.08)] transition"
+            onclick={() => router.go(`#/video/${v.key}`)}
+          >
+            <span>
+              <span class="block text-sm font-extrabold leading-7">{v.title}</span>
+              <span class="block text-xs text-[var(--ink-soft)] mt-1">{v.channel} • زیرنویس فارسی</span>
+            </span>
+            <span class="badge badge-sm shrink-0 mt-1">پخش با زیرنویس</span>
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
   <!-- خودآزمایی تمرینی (نمره ندارد؛ پاسخ پس از انتخاب نمایش داده می‌شود) -->
   <section class="space-y-3">
     <h2 class="text-lg font-extrabold">{lesson.exerciseTitle}</h2>
@@ -273,28 +299,15 @@
     </div>
   </section>
 
-  <!-- پیش‌نمایش آزمایشگاه (خواندنی؛ اجرا در فاز ۳) -->
+  <!-- آزمایشگاه زنده (Pyodide در مرورگر + ذخیرهٔ دفترچه) -->
   {#if lesson.lab}
-    <details class="paper-card p-5">
-      <summary class="cursor-pointer text-sm font-extrabold">
-        {lesson.lab.title}
-      </summary>
-      <p class="mt-2 text-xs text-[var(--ink-soft)] leading-6">{lesson.lab.intro}</p>
-      <p class="mt-1 text-[11px] text-[var(--ink-soft)]">
-        اجرای زنده با ژوپیتر در فاز ۳ می‌آید؛ فعلاً سلول‌ها فقط خواندنی‌اند.
-      </p>
-      <div class="mt-3 space-y-3">
-        {#each lesson.lab.cells as cell}
-          <div class="rounded-xl border border-[var(--line)] overflow-hidden">
-            <p class="text-xs font-bold px-3 py-2 bg-[var(--bg-warm)]">{cell.title}</p>
-            <pre dir="ltr" class="font-code text-left text-[13px] leading-6 px-3 py-2 overflow-x-auto bg-[#1d1a18] text-[#ede6da]">{cell.code}</pre>
-            <p class="text-xs leading-6 px-3 py-2 text-[var(--ink-soft)]">
-              {cell.note} — خروجی مورد انتظار: <code dir="ltr">{cell.expected}</code>
-            </p>
-          </div>
-        {/each}
-      </div>
-    </details>
+    <section class="paper-card p-5">
+      <LabView
+        lab={lesson.lab}
+        dataset={COURSE_CONTENT.labDatasets?.[String(lesson.id)] || null}
+        labCode={`lab-${lesson.id}`}
+      />
+    </section>
   {/if}
 
   <!-- آزمون یا پیوند به درس B -->

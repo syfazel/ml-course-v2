@@ -1,26 +1,37 @@
 <script>
   import { onMount } from 'svelte'
   import { auth } from '../lib/auth-store.svelte.js'
-  import { fetchTeacherDashboardData } from '../lib/course-api.js'
+  import { fetchTeacherDashboardData, fetchAllLabNotebooks } from '../lib/course-api.js'
   import { computeGates } from '../lib/gates.js'
 
   let loading = $state(true)
   let error = $state(null)
   let dashboard = $state(null)
+  let notebooks = $state([])
+  let notebooksError = $state(null)
+  let openNotebookId = $state(null)
 
   let gates = $derived(dashboard ? computeGates(dashboard.quizzes) : [])
+  let memberByAuthId = $derived(
+    Object.fromEntries((dashboard?.members || []).map((m) => [m.auth_id, m]))
+  )
 
   async function load() {
     loading = true
     error = null
     try {
-      const res = await fetchTeacherDashboardData()
+      const [res, nbRes] = await Promise.all([
+        fetchTeacherDashboardData(),
+        fetchAllLabNotebooks()
+      ])
       if (res.error) {
         error = res.error
         dashboard = null
       } else {
         dashboard = res.data
       }
+      if (nbRes.error) notebooksError = nbRes.error
+      else notebooks = nbRes.data || []
     } finally {
       loading = false
     }
@@ -167,6 +178,47 @@
       </section>
 
       <!-- اشتباه‌های آزمون -->
+      <section class="paper-card p-5 space-y-3">
+        <h2 class="text-sm font-extrabold">دفترچه‌های آزمایشگاه شاگرد (lab_notebooks)</h2>
+        {#if notebooksError}
+          <p class="text-xs text-amber-800">{notebooksError}</p>
+        {:else if notebooks.length === 0}
+          <p class="text-xs text-[var(--ink-soft)]">هنوز دفترچه‌ای ذخیره نشده است.</p>
+        {:else}
+          <div class="space-y-2">
+            {#each notebooks as nb}
+              {@const member = memberByAuthId[nb.user_id]}
+              <details
+                class="rounded-xl border border-[var(--glass-border)] p-3"
+                open={openNotebookId === nb.id}
+                ontoggle={(e) => {
+                  if (e.currentTarget.open) openNotebookId = nb.id
+                  else if (openNotebookId === nb.id) openNotebookId = null
+                }}
+              >
+                <summary class="cursor-pointer text-xs font-bold flex flex-wrap gap-2 justify-between">
+                  <span>{nb.lab_code} — {member?.display_name || member?.username || nb.user_id}</span>
+                  <span class="text-[var(--ink-soft)] font-normal">
+                    {(nb.cells || []).length} سلول • {new Date(nb.updated_at).toLocaleString('fa-IR')}
+                  </span>
+                </summary>
+                <div class="mt-3 space-y-3">
+                  {#each nb.cells || [] as c}
+                    <div class="rounded-xl border border-[var(--line)] overflow-hidden">
+                      <p class="text-xs font-bold px-3 py-2 bg-[var(--bg-warm)]">{c.title}</p>
+                      <pre dir="ltr" class="font-code text-left text-[13px] leading-6 px-3 py-2 overflow-x-auto bg-[#1d1a18] text-[#ede6da]">{c.code}</pre>
+                      {#if c.output?.stdout}
+                        <pre dir="ltr" class="text-xs leading-6 px-3 py-2 whitespace-pre-wrap">{c.output.stdout}</pre>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </details>
+            {/each}
+          </div>
+        {/if}
+      </section>
+
       <section class="paper-card p-5 space-y-3">
         <h2 class="text-sm font-extrabold">اشتباه‌های آزمون (mistakes)</h2>
         {#if dashboard.mistakes.length === 0}

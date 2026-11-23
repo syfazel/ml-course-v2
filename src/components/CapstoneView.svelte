@@ -1,5 +1,6 @@
 <script>
   import { COURSE_CONTENT } from '../data/course-content.js'
+  import LabView from './LabView.svelte'
 
   let cap = COURSE_CONTENT.capstone
 </script>
@@ -33,27 +34,14 @@
     </div>
   </section>
 
-  <!-- آزمایشگاه تکلیف پایانی (خواندنی؛ اجرا در فاز ۳) -->
+  <!-- آزمایشگاه تکلیف پایانی (زنده) -->
   {#if cap.lesson?.lab}
-    <details class="paper-card p-5">
-      <summary class="cursor-pointer text-sm font-extrabold">
-        {cap.lesson.lab.title}
-      </summary>
-      <p class="mt-2 text-xs text-[var(--ink-soft)] leading-6">{cap.lesson.lab.intro}</p>
-      <p class="mt-1 text-[11px] text-[var(--ink-soft)]">
-        اجرای زنده با ژوپیتر در فاز ۳ می‌آید؛ فعلاً سلول‌ها فقط خواندنی‌اند.
-      </p>
-      <div class="mt-3 space-y-3">
-        {#each cap.lesson.lab.cells as cell}
-          <div class="rounded-xl border border-[var(--line)] overflow-hidden">
-            <p class="text-xs font-bold px-3 py-2 bg-[var(--bg-warm)]">{cell.title}</p>
-            <pre dir="ltr" class="font-code text-left text-[13px] leading-6 px-3 py-2 overflow-x-auto bg-[#1d1a18] text-[#ede6da]">{cell.code}</pre>
-            <p class="text-xs leading-6 px-3 py-2 text-[var(--ink-soft)]">
-              {cell.note} — خروجی مورد انتظار: <code dir="ltr">{cell.expected}</code>
-            </p>
-          </div>
-        {/each}
-      </div>
-    </details>
+    <section class="paper-card p-5">
+      <LabView
+        lab={cap.lesson.lab}
+        dataset={COURSE_CONTENT.labDatasets?.['100'] || null}
+        labCode="capstone-day-40"
+      />
+    </section>
   {/if}
 </div>

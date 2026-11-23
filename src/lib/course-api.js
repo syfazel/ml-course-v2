@@ -144,6 +144,75 @@ export async function submitQuizAttempt(quizCode, answersArray) {
   return { data, error: null }
 }
 
+// ---------- دفترچه‌های آزمایشگاه (lab_notebooks) — فاز ۳ ----------
+// سلول‌ها به‌شکل [{title, code, output}] ذخیره می‌شوند؛ خروجی فقط برای مرور است،
+/// نه برای نمره (تصحیح لب با استاد است، نه خودکار).
+export async function fetchLabNotebook(labCode) {
+  if (!sb || !auth.canOperate) return { data: null, error: null }
+  let query = sb
+    .from('lab_notebooks')
+    .select('id, user_id, lab_code, cells, updated_at, created_at')
+    .eq('lab_code', labCode)
+    .is('deleted_at', null)
+  if (auth.isStudent) {
+    query = query.eq('user_id', auth.user.id)
+  }
+  const { data, error } = await query.maybeSingle()
+  if (error) {
+    return { data: null, error: handleApiError(error, 'خواندن دفترچهٔ آزمایشگاه ناموفق بود.') }
+  }
+  return { data: data || null, error: null }
+}
+
+export async function saveLabNotebook(labCode, cells) {
+  if (!sb || !auth.canOperate) {
+    return { data: null, error: 'نشست معتبر برای ذخیره دفترچه وجود ندارد.' }
+  }
+  if (!auth.isStudent) {
+    return { data: null, error: null, readOnlyPreview: true }
+  }
+  const now = new Date().toISOString()
+  const existing = await fetchLabNotebook(labCode)
+  if (existing.error) return { data: null, error: existing.error }
+  if (existing.data) {
+    const { data, error } = await sb
+      .from('lab_notebooks')
+      .update({ cells, updated_at: now })
+      .eq('id', existing.data.id)
+      .select('id, user_id, lab_code, cells, updated_at, created_at')
+      .single()
+    if (error) {
+      return { data: null, error: handleApiError(error, 'ذخیره دفترچهٔ آزمایشگاه ناموفق بود.') }
+    }
+    return { data, error: null }
+  }
+  const { data, error } = await sb
+    .from('lab_notebooks')
+    .insert({ user_id: auth.user.id, lab_code: labCode, cells, updated_at: now })
+    .select('id, user_id, lab_code, cells, updated_at, created_at')
+    .single()
+  if (error) {
+    return { data: null, error: handleApiError(error, 'ذخیره دفترچهٔ آزمایشگاه ناموفق بود.') }
+  }
+  return { data, error: null }
+}
+
+export async function fetchAllLabNotebooks() {
+  if (!sb || !auth.canOperate || !auth.isTeacher) {
+    return { data: [], error: null }
+  }
+  const { data, error } = await sb
+    .from('lab_notebooks')
+    .select('id, user_id, lab_code, cells, updated_at, created_at')
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+    .limit(100)
+  if (error) {
+    return { data: [], error: handleApiError(error, 'خواندن دفترچه‌های آزمایشگاه ناموفق بود.') }
+  }
+  return { data: data || [], error: null }
+}
+
 // ---------- داشبورد استاد (فقط برای isTeacher؛ بدون داده ساختگی) ----------
 export async function fetchTeacherDashboardData() {
   if (!sb || !auth.canOperate || !auth.isTeacher) {

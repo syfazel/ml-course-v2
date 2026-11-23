@@ -21,6 +21,7 @@
   import QuizView from './components/QuizView.svelte'
   import CapstoneView from './components/CapstoneView.svelte'
   import TeacherDashboardView from './components/TeacherDashboardView.svelte'
+  import VideoView from './components/VideoView.svelte'
 
   let simpleMode = $state(false)
   let day0Progress = $state(null)
@@ -46,6 +47,36 @@
     const m = router.path.match(/^\/quiz\/(quiz-\d+-B)$/)
     if (!m) return null
     return COURSE_CONTENT.quizzes[m[1]] || null
+  })
+
+  // ویدیوی فعلی از روی مسیر — زیرنویس‌ها لِیزی لود می‌شوند
+  let currentVideoKey = $derived.by(() => {
+    const m = router.path.match(/^\/video\/([a-z0-9-]+)$/)
+    return m ? m[1] : null
+  })
+  let currentVideo = $state(null)
+  let videoLoading = $state(false)
+  let videoError = $state(null)
+  $effect(() => {
+    const key = currentVideoKey
+    if (!key) {
+      currentVideo = null
+      videoError = null
+      return
+    }
+    videoLoading = true
+    videoError = null
+    import('./data/course-videos.js')
+      .then((mod) => {
+        const found = (mod.COURSE_VIDEOS || []).find((v) => v.key === key)
+        if (found) currentVideo = found
+        else videoError = 'ویدیوی مورد نظر پیدا نشد.'
+        videoLoading = false
+      })
+      .catch(() => {
+        videoError = 'بارگذاری زیرنویس‌های ویدیو ناموفق بود.'
+        videoLoading = false
+      })
   })
   let currentQuizAttempts = $derived.by(() => {
     if (!currentQuiz) return []
@@ -145,6 +176,18 @@
           attempts={currentQuizAttempts}
           onAttemptSubmitted={refreshCourseState}
         />
+      {:else if currentVideoKey}
+        {#if videoLoading}
+          <div class="glass-card p-6 text-sm">در حال بارگذاری ویدیو و زیرنویس‌ها…</div>
+        {:else if videoError || !currentVideo}
+          <div class="glass-card p-6 text-sm text-amber-900 bg-amber-50 border border-amber-300">
+            {videoError || 'ویدیوی مورد نظر پیدا نشد.'}
+          </div>
+        {:else}
+          {#key currentVideo.key}
+            <VideoView video={currentVideo} />
+          {/key}
+        {/if}
       {:else if router.path === '/capstone'}
         <CapstoneView />
       {:else if router.path === '/teacher'}
