@@ -1,0 +1,152 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* ============================================================================
+   توکن‌های طراحی گرم + شیشه‌ای اقتباس‌شده از sclack_A (راست‌به‌چپ فارسی)
+   ============================================================================ */
+:root {
+  --bg-warm: #fdf8ef;
+  --bg-warm-2: #f8eedd;
+  --bg-warm-3: #f0e2c8;
+  --ink: #1f1b16;
+  --ink-soft: #6b5e50;
+  --amber: #d97706;
+  --amber-dark: #b45309;
+  --amber-soft: #fef3c7;
+  --coral: #e05a47;
+  --coral-soft: #fee2e2;
+  --line: rgba(120, 92, 60, 0.16);
+
+  /* شیشه دو سطح (کروم/کارت ملایم + مودال/کارت ویژه) */
+  --glass-tint: rgba(255, 251, 244, 0.72);
+  --glass-tint-strong: rgba(255, 252, 247, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.78);
+  --glass-shadow: 0 10px 28px rgba(120, 78, 32, 0.08);
+  --glass-blur: 12px;
+}
+
+body {
+  font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background-color: var(--bg-warm);
+  line-height: 1.85;
+}
+
+.warm-mesh {
+  background-color: var(--bg-warm);
+  background-image:
+    radial-gradient(circle at 12% 14%, rgba(217, 119, 6, 0.14), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(224, 90, 71, 0.11), transparent 34%),
+    radial-gradient(circle at 50% 92%, rgba(245, 158, 11, 0.12), transparent 40%),
+    linear-gradient(160deg, var(--bg-warm) 0%, var(--bg-warm-2) 100%);
+  background-attachment: fixed;
+}
+
+/* کارت و کروم شیشه‌ای (فقط برای کروم و کارت‌های خلاصه؛ متن طولانی مات می‌ماند) */
+.glass-chrome {
+  background: var(--glass-tint);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-card {
+  background: var(--glass-tint);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  border-radius: 1rem;
+}
+
+.paper-card {
+  background: rgba(255, 253, 249, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgba(120, 78, 32, 0.05);
+  border-radius: 1rem;
+}
+
+@supports (backdrop-filter: blur(12px)) {
+  .glass-chrome,
+  .glass-card {
+    backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --glass-blur: 8px;
+  }
+}
+
+/* حالت ساده و احترام به prefers-reduced-transparency */
+html.simple-mode .glass-chrome,
+html.simple-mode .glass-card {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #fffdf9 !important;
+  border-color: var(--line) !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-chrome,
+  .glass-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: #fffdf9 !important;
+  }
+}
+
+/* دکمه اصلی ۴۴px منطبق با زبان طراحی sclack_A */
+.btn-ml-primary {
+  min-height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--amber) 0%, var(--coral) 100%);
+  color: #ffffff;
+  font-weight: 700;
+  border: none;
+  padding-inline: 1.25rem;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.btn-ml-primary:hover:not(:disabled) {
+  opacity: 0.94;
+}
+
+.btn-ml-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-ml-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-ml-ghost {
+  min-height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-weight: 500;
+  padding-inline: 1rem;
+  transition: background-color 120ms ease;
+}
+
+.btn-ml-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* لوگوی چهار نقطه گرم sclack_A */
+.four-dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.four-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+}
+.four-dots span:nth-child(1) { background: #f59e0b; }
+.four-dots span:nth-child(2) { background: #d97706; }
+.four-dots span:nth-child(3) { background: #ea580c; }
+.four-dots span:nth-child(4) { background: #e05a47; }

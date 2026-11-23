@@ -1,0 +1,22 @@
+{
+  "name": "ml-course-v2-skeleton",
+  "version": "0.1.0-phase1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@tailwindcss/vite": "^4.0.9",
+    "daisyui": "^5.0.0",
+    "svelte": "^5.20.0",
+    "tailwindcss": "^4.0.9",
+    "vite": "^6.2.0"
+  }
+}

@@ -1,0 +1,176 @@
+<script>
+  import { auth } from '../lib/auth-store.svelte.js'
+  import { signOut } from '../lib/auth.js'
+  import { router } from '../lib/router.svelte.js'
+  import { COURSE_TREE } from '../data/day0-content.js'
+
+  let { completedSteps = [], simpleMode = false, onToggleSimpleMode } = $props()
+  let expandedPhase = $state('phase-0')
+  let expandedLesson = $state('day-0')
+
+  function isStepDone(stepId) {
+    return Array.isArray(completedSteps) && completedSteps.includes(stepId)
+  }
+</script>
+
+<!-- سایدبار سه‌سطحی (فاز ← درس ← مرحله) در سمت راست برای RTL -->
+<aside
+  class="glass-chrome w-full lg:w-80 lg:min-h-[calc(100vh-2rem)] lg:sticky lg:top-4 rounded-2xl p-4 flex flex-col justify-between gap-5"
+  aria-label="ناوبری دوره"
+>
+  <div class="space-y-5">
+    <!-- سرستون برند -->
+    <div class="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+      <div class="flex items-center gap-2.5">
+        <div class="four-dots" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div>
+          <p class="font-extrabold text-sm">یادگیری ماشین</p>
+          <p class="text-[11px] text-[var(--ink-soft)]">
+            {auth.isTeacher ? 'پنل استاد' : 'پنل شاگرد'} — {auth.member?.display_name}
+          </p>
+        </div>
+      </div>
+      <span
+        class="badge badge-sm border-0"
+        class:bg-amber-100={auth.isTeacher}
+        class:text-amber-900={auth.isTeacher}
+        class:bg-emerald-100={auth.isStudent}
+        class:text-emerald-900={auth.isStudent}
+      >
+        {auth.isTeacher ? 'استاد' : 'شاگرد'}
+      </span>
+    </div>
+
+    <!-- ناوبری اصلی -->
+    <nav class="space-y-1.5">
+      <p class="text-[11px] font-bold text-[var(--ink-soft)] px-2">بخش‌های اصلی</p>
+
+      <button
+        type="button"
+        class="w-full text-right px-3 py-2.5 rounded-xl text-sm font-medium transition cursor-pointer flex items-center justify-between"
+        class:bg-[var(--amber-soft)]={router.path === '/'}
+        class:text-[var(--amber-dark)]={router.path === '/'}
+        class:font-bold={router.path === '/'}
+        onclick={() => router.go('#/')}
+      >
+        <span>خانه و قدم بعدی</span>
+      </button>
+
+      {#if auth.isTeacher}
+        <button
+          type="button"
+          class="w-full text-right px-3 py-2.5 rounded-xl text-sm font-medium transition cursor-pointer flex items-center justify-between"
+          class:bg-[var(--amber-soft)]={router.path === '/teacher'}
+          class:text-[var(--amber-dark)]={router.path === '/teacher'}
+          class:font-bold={router.path === '/teacher'}
+          onclick={() => router.go('#/teacher')}
+        >
+          <span>داشبورد استاد</span>
+          <span class="badge badge-xs bg-[var(--coral)] text-white border-0">فقط استاد</span>
+        </button>
+      {/if}
+    </nav>
+
+    <!-- درخت سه‌سطحی: فاز ← درس ← مرحله -->
+    <div class="space-y-2">
+      <p class="text-[11px] font-bold text-[var(--ink-soft)] px-2">
+        مسیر دوره (فاز ← درس ← مرحله)
+      </p>
+
+      {#each COURSE_TREE as phase}
+        <div class="rounded-xl border border-[var(--line)] bg-white/55 p-2 space-y-1.5">
+          <!-- سطح ۱: فاز -->
+          <button
+            type="button"
+            class="w-full text-right px-2 py-1.5 rounded-lg text-xs font-extrabold flex items-center justify-between cursor-pointer hover:bg-white/70"
+            onclick={() =>
+              (expandedPhase = expandedPhase === phase.phaseId ? '' : phase.phaseId)}
+          >
+            <span>{phase.phaseTitle}</span>
+            <span class="text-[var(--ink-soft)]">
+              {expandedPhase === phase.phaseId ? '▾' : '◂'}
+            </span>
+          </button>
+
+          {#if expandedPhase === phase.phaseId}
+            <div class="ps-2 border-s-2 border-amber-300/70 space-y-1.5">
+              {#each phase.lessons as lesson}
+                <!-- سطح ۲: درس -->
+                <div>
+                  <button
+                    type="button"
+                    class="w-full text-right px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-between cursor-pointer hover:bg-white/80"
+                    class:bg-[var(--amber-soft)]={router.path === '/lesson/day-0'}
+                    class:text-[var(--amber-dark)]={router.path === '/lesson/day-0'}
+                    onclick={() => {
+                      expandedLesson = lesson.unitCode
+                      router.go(lesson.route)
+                    }}
+                  >
+                    <span>{lesson.title}</span>
+                    <span class="text-[10px] opacity-75">{lesson.badge}</span>
+                  </button>
+
+                  {#if expandedLesson === lesson.unitCode}
+                    <!-- سطح ۳: مراحل درس -->
+                    <ul class="mt-1 ps-3 space-y-1 border-s border-[var(--line)]">
+                      {#each lesson.steps as step}
+                        <li>
+                          <button
+                            type="button"
+                            class="w-full text-right px-2 py-1 rounded-md text-xs flex items-center justify-between gap-2 cursor-pointer hover:bg-white/80"
+                            class:font-bold={router.path === '/lesson/day-0' && router.step === step.id}
+                            onclick={() => router.go(`#/lesson/day-0?step=${step.id}`)}
+                          >
+                            <span class="truncate">{step.title}</span>
+                            {#if isStepDone(step.id)}
+                              <span class="text-emerald-600 font-bold" title="تکمیل‌شده">✓</span>
+                            {/if}
+                          </button>
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </div>
+              {/each}
+
+              <!-- آزمون نمونه روز ۰ -->
+              <button
+                type="button"
+                class="w-full text-right px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-between cursor-pointer hover:bg-white/80"
+                class:bg-[var(--amber-soft)]={router.path === '/quiz/quiz-day-0'}
+                class:text-[var(--amber-dark)]={router.path === '/quiz/quiz-day-0'}
+                onclick={() => router.go('#/quiz/quiz-day-0')}
+              >
+                <span>آزمون نمونه روز ۰ (۶ سؤال)</span>
+                <span class="text-[10px] text-[var(--coral)]">دروازه ۶۰٪</span>
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </div>
+
+  <!-- فوتر سایدبار: حالت ساده + خروج -->
+  <div class="pt-3 border-t border-[var(--line)] space-y-2">
+    <button
+      type="button"
+      class="btn-ml-ghost w-full text-xs flex items-center justify-between"
+      onclick={onToggleSimpleMode}
+    >
+      <span>حالت ساده (بدون شیشه)</span>
+      <span class="font-bold">{simpleMode ? 'روشن' : 'خاموش'}</span>
+    </button>
+
+    <button
+      type="button"
+      class="btn-ml-ghost w-full text-xs text-red-700 border-red-200 hover:bg-red-50"
+      onclick={() => signOut()}
+    >
+      خروج از حساب
+    </button>
+  </div>
+</aside>
