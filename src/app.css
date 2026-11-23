@@ -223,3 +223,79 @@ html.simple-mode .glass-card {
     animation: none;
   }
 }
+
+/* تیزر ورود «رشتهٔ طلایی یادگیری» — لایه‌های تمام‌صفحه */
+.teaser-root {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--canvas);
+}
+.teaser-base,
+.teaser-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.teaser-base { z-index: 0; }
+.teaser-video { z-index: 1; }
+.teaser-network {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.teaser-network canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+}
+.teaser-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(250, 247, 242, 0.72) 0%,
+    rgba(250, 247, 242, 0.35) 28%,
+    rgba(30, 25, 22, 0.12) 62%,
+    rgba(30, 25, 22, 0.38) 100%
+  );
+}
+.teaser-hero { position: relative; z-index: 4; }
+.teaser-h1 {
+  font-size: 32px;
+  line-height: 1.4;
+  font-weight: 800;
+  color: var(--ink);
+  text-shadow: 0 1px 14px rgba(250, 247, 242, 0.85);
+}
+.teaser-tagline {
+  font-size: 15px;
+  color: var(--ink-soft);
+  text-shadow: 0 1px 10px rgba(250, 247, 242, 0.8);
+}
+.teaser-motion-btn {
+  position: relative;
+  z-index: 4;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-tint);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+.teaser-motion-btn:hover { color: var(--ink); }
+@media (max-width: 480px) {
+  .teaser-h1 { font-size: 28px; }
+}
