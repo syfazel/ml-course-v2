@@ -8,6 +8,7 @@
     signOut
   } from '../lib/auth.js'
   import { router } from '../lib/router.svelte.js'
+  import { APP_VERSION } from '../lib/version-check.js'
   // شبکهٔ Three.js را لِیزی لود می‌کنیم تا باندل اصلی سبک بماند؛
   // روی دستگاه ضعیف یا reduced-motion اصلاً دانلود نمی‌شود.
 
@@ -340,6 +341,10 @@
           </div>
         </form>
       {/if}
+
+      <!-- فاز ۱ (R-8): هش باندل روی صفحهٔ ورود — وقتی ورود خراب است،
+           معلوم باشد کدام باندل در حال اجراست. -->
+      <p class="pt-2 text-center text-[11px] text-[var(--ink-soft)]">نسخهٔ باندل: <span class="font-code" dir="ltr">{APP_VERSION}</span></p>
     </div>
 
     {#if !reducedMotion}

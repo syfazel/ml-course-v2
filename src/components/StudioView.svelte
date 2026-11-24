@@ -24,7 +24,7 @@
     StudioGatewayError
   } from '../lib/studio-gateway.js'
   import StudioOpening from './StudioOpening.svelte'
-  import { setBusy, clearBusy } from '../lib/version-check.js'
+  import { setBusy, clearBusy, APP_VERSION } from '../lib/version-check.js'
 
   // Phase R0 — wake state machine: sleeping -> waking -> launching ->
   // ready | error. The wake call itself polls with the server's
@@ -689,6 +689,9 @@
       {#if errorDetail}
         <p class="font-code mt-2 text-[11px] leading-5 text-[var(--ink-soft)]" dir="ltr">{errorDetail}</p>
       {/if}
+      <!-- فاز ۱ (R-8): هش باندل روی کارت خطا — وقتی خطایی گزارش می‌شود،
+           معلوم باشد روی کدام باندل است. -->
+      <p class="mt-3 text-[11px] text-[var(--ink-soft)]">نسخهٔ باندل: <span class="font-code" dir="ltr">{APP_VERSION}</span></p>
     </div>
     <div class="flex gap-2">
       <button type="button" class="btn-ml-primary" onclick={() => void startFlow()}>تلاش دوباره</button>
