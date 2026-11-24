@@ -76,7 +76,30 @@
   let saveNote = $state('')
   let datasetOpen = $state(-1)
   let sliderDegree = $state(2)
+  let sliderServer = $state(null) // null | { state: 'running'|'ok'|'error', r2, stdout, error }
   let sheetOpen = $state(false)
+
+  // کارت شیشه‌ای یک‌بارمصرف روز اول در میز — همان پرچم سایدبار، پس واقعاً یک‌بار است.
+  // فقط یک پرچم راهنما در localStorage؛ هیچ نشست/توکنی اینجا ذخیره نمی‌شود.
+  const DAY1_HINT_KEY = 'jarvis-studio-day1-hint-seen'
+  function day1HintSeen() {
+    try {
+      return (
+        typeof window !== 'undefined' && window.localStorage?.getItem(DAY1_HINT_KEY) === '1'
+      )
+    } catch {
+      return false
+    }
+  }
+  let showDay1DeskHint = $state(!day1HintSeen())
+  function dismissDay1DeskHint() {
+    try {
+      window.localStorage?.setItem(DAY1_HINT_KEY, '1')
+    } catch {
+      /* ذخیرهٔ محلی در دسترس نیست؛ فقط همین نشست مخفی می‌شود */
+    }
+    showDay1DeskHint = false
+  }
   let gateway = null
   let statusTimer = null
   let countdownTimer = null
@@ -255,6 +278,72 @@
       dots: points.map(([x, y]) => ({ cx: sx(x), cy: sy(y) }))
     }
   })
+
+  // ---------- همگام‌سازی لغزنده با سلول (R2): برازش سمت مرورگر را در کرنل
+  // واقعی اجرا می‌کند و R² سرور را کنار R² سمت مرورگر می‌گذارد. از همان
+  // gateway.execute و همان رشتهٔ نور وضعیت runCell استفاده می‌کند؛ سلول
+  // تازه به دفترچه اضافه نمی‌شود و چیزی ذخیره نمی‌شود (فقط راستی‌آزمایی). ----------
+  function fmtNum(v) {
+    return String(Number(v.toPrecision(6)))
+  }
+  async function syncSliderToCell() {
+    if (!gateway || running || phase !== 'ready' || !sliderFit) return
+    running = true
+    sliderServer = { state: 'running', r2: null, stdout: '', error: '' }
+    statusLight = 'running'
+    statusLightLabel = 'در حال اجرا'
+    const { points } = sliderPoints
+    const xs = points.map(([x]) => fmtNum(x)).join(', ')
+    const ys = points.map(([, y]) => fmtNum(y)).join(', ')
+    const code = [
+      'import numpy as np',
+      `x = np.array([${xs}], dtype=float)`,
+      `y = np.array([${ys}], dtype=float)`,
+      `coef = np.polyfit(x, y, ${sliderDegree})`,
+      'p = np.poly1d(coef)',
+      'yhat = p(x)',
+      'ss_res = float(((y - yhat) ** 2).sum())',
+      'ss_tot = float(((y - y.mean()) ** 2).sum())',
+      'r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0',
+      'print("coef:", [round(float(c), 6) for c in coef])',
+      'print("R2 =", round(float(r2), 4))'
+    ].join('\n')
+    try {
+      const out = await gateway.execute(code, labCodeResolved)
+      const res = gatewayOutcomeToOutput(out)
+      if (res.error) {
+        sliderServer = { state: 'error', r2: null, stdout: res.stdout || '', error: res.error }
+        statusLight = 'error'
+        statusLightLabel = 'خطا'
+      } else {
+        const m = res.stdout.match(/R2\s*=\s*([0-9.]+)/)
+        sliderServer = {
+          state: 'ok',
+          r2: m ? Number(m[1]) : null,
+          stdout: res.stdout,
+          error: ''
+        }
+        statusLight = 'ok'
+        statusLightLabel = 'موفق'
+      }
+      void refreshStatus()
+    } catch (e) {
+      sliderServer = {
+        state: 'error',
+        r2: null,
+        stdout: '',
+        error:
+          e instanceof StudioGatewayError
+            ? e.message
+            : 'اجرای سلول ناموفق بود.'
+      }
+      statusLight = 'error'
+      statusLightLabel = 'خطا'
+      if (e instanceof StudioGatewayError) errorDetail = e.detail || ''
+    } finally {
+      running = false
+    }
+  }
 
   // ---------- dataset drawer helpers (tool 2) ----------
   function histogram(values) {
@@ -608,7 +697,7 @@
   </div>
 {:else}
   <!-- ================= the desk ================= -->
-  <div class="studio-desk min-h-dvh warm-mesh flex flex-col">
+  <div class="studio-desk h-dvh warm-mesh flex flex-col">
     <header class="glass-chrome sticky top-0 z-40">
       <div class="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-4 py-3">
         <img src="logo/jarvis-studio-shield-32.png" alt="" width="32" height="32" />
@@ -642,9 +731,29 @@
       </div>
     {/if}
 
-    <main class="mx-auto grid w-full max-w-[1400px] flex-1 gap-4 px-4 py-4 lg:grid-cols-[55%_45%]">
+    <main class="mx-auto grid min-h-0 w-full max-w-[1400px] flex-1 gap-4 overflow-y-auto px-4 py-4 lg:grid-cols-[55%_45%]">
       <!-- لوح کد -->
       <section class="flex min-w-0 flex-col gap-4">
+        <!-- کارت شیشه‌ای یک‌بارمصرف روز اول در میز (R2) -->
+        {#if showDay1DeskHint}
+          <div class="glass-card p-3">
+            <p class="text-xs font-extrabold leading-6">روز اول در استودیو</p>
+            <p class="text-xs leading-6 text-[var(--ink-soft)]">
+              سلول‌ها را با Shift+Enter اجرا کن؛ لغزندهٔ پایین درجهٔ برازش را زنده عوض می‌کند و
+              دکمهٔ «همگام‌سازی با سلول» نتیجهٔ سرور را با محاسبهٔ مرورگر مقایسه می‌کند.
+            </p>
+            <div class="mt-2 flex justify-end">
+              <button
+                type="button"
+                class="btn-ml-ghost !min-h-[32px] px-3 text-xs"
+                onclick={dismissDay1DeskHint}
+              >
+                فهمیدم
+              </button>
+            </div>
+          </div>
+        {/if}
+
         <!-- نقشهٔ رشتهٔ طلایی (تولز ۱) -->
         <nav class="glass-card flex items-center gap-1 overflow-x-auto p-3" aria-label="نقشهٔ آزمایش">
           {#each STAGES as stage, s}
@@ -726,7 +835,7 @@
           {#if saveNote}<span class="text-xs text-[var(--ink-soft)]">{saveNote}</span>{/if}
         </div>
 
-        <!-- لغزندهٔ پارامتر زنده (تولز ۳) — محاسبهٔ سمت مرورگر، بدون کرنل -->
+        <!-- لغزندهٔ پارامتر زنده (تولز ۳) — محاسبهٔ سمت مرورگر + همگام‌سازی با سلول (R2) -->
         <section class="glass-card p-4">
           <h2 class="text-sm font-extrabold">لغزندهٔ پارامتر زنده — درجهٔ چندجمله‌ای</h2>
           <div class="mt-3 flex items-center gap-3">
@@ -756,6 +865,33 @@
             {sliderNote}
             {#if sliderPoints.demo} <span>(دادهٔ نمایشی — جدول خانه‌ها)</span>{/if}
           </p>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="btn-ml-ghost !min-h-[44px] text-sm"
+              disabled={running || !gateway || phase !== 'ready'}
+              onclick={() => void syncSliderToCell()}
+            >
+              {sliderServer?.state === 'running' ? 'در حال همگام‌سازی…' : 'همگام‌سازی با سلول'}
+            </button>
+            {#if sliderServer?.state === 'ok' && sliderServer.r2 != null}
+              <span class="text-sm">
+                سرور: R² = <span dir="ltr" class="font-code font-bold">{sliderServer.r2.toFixed(2)}</span>
+              </span>
+              {#if sliderFit}
+                <span class="text-xs text-[var(--ink-soft)]">
+                  {Math.abs(sliderServer.r2 - sliderFit.r2) < 0.005
+                    ? 'با محاسبهٔ مرورگر می‌خواند'
+                    : 'با محاسبهٔ مرورگر کمی فرق دارد'}
+                </span>
+              {/if}
+            {:else if sliderServer?.state === 'error'}
+              <span class="text-xs font-bold" style="color: var(--saffron-text)">{sliderServer.error}</span>
+            {/if}
+          </div>
+          {#if sliderServer?.state === 'ok' && sliderServer.stdout}
+            <pre dir="ltr" class="mt-2 whitespace-pre-wrap rounded-xl bg-[#1d1a18] p-3 text-left text-xs leading-6 text-[#f5efe6]">{sliderServer.stdout}</pre>
+          {/if}
         </section>
       </section>
 
@@ -1001,6 +1137,7 @@
       max-height: 70%;
       overflow-y: auto;
       padding: 12px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
       border-radius: 20px 20px 0 0;
       background: var(--glass-tint-strong);
       border: 1px solid var(--glass-border);
@@ -1016,7 +1153,7 @@
     .mobile-sheet-fab {
       display: inline-flex;
       position: fixed;
-      bottom: 14px;
+      bottom: calc(14px + env(safe-area-inset-bottom, 0px));
       left: 50%;
       transform: translateX(-50%);
       z-index: 51;
@@ -1029,11 +1166,12 @@
       align-items: center;
       box-shadow: 0 8px 24px rgba(30, 25, 22, 0.2);
     }
-    /* کپسول شناور «درس | استودیو» — بالای دکمهٔ خروجی تا روی هم نیفتند */
+    /* کپسول شناور «درس | استودیو» — بالای دکمهٔ خروجی تا روی هم نیفتند؛
+       با safe-area تا روی گوشی‌های بریده (ناچ) زیر نشانگر خانه نرود */
     .mobile-view-capsule {
       display: inline-flex;
       position: fixed;
-      bottom: 70px;
+      bottom: calc(70px + env(safe-area-inset-bottom, 0px));
       left: 50%;
       transform: translateX(-50%);
       z-index: 51;
