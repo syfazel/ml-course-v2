@@ -19,36 +19,61 @@
 //  - clean-mode is applied to the root element, not <body>; the component's
 //    CSS hides #soundBanner / #phasePill / #controlDock / #restoreUiBtn with
 //    display:none (the ids stay in the DOM: this script references all of them).
+import { OPENING_ASSETS, preloadOpeningAssets, ERROR_LABELS } from "./studio-opening-preload.js";
+
 export function createStudioOpening(root, options = {}) {
 
       // ============================================================
       // 1. ASSET LOADING (Logo + Surgical Beak Layers + Audio Meta)
       // ============================================================
-      const ASSETS = {
-        emblem: "studio-opening/emblem.webp",
-        emblemBaseOpen: "studio-opening/emblemBaseOpen.webp",
-        lowerBeak: "studio-opening/lowerBeak.webp",
-        upperBeak: "studio-opening/upperBeak.webp",
-        wordmarkLight: "studio-opening/wordmarkLight.webp",
-        wordmarkDark: "studio-opening/wordmarkDark.webp"
-      };
-
+      // R1 — assets load through the resilient preloader (retries +
+      // allSettled). One bad asset never blocks the show: the 2.5s
+      // fallback still starts the animation, and the canvas paints a
+      // visible golden-emerald fallback for anything that failed.
       const AUDIO_META = {"total_dur": 8.0, "voice_start": 4.85, "voice_dur": 1.471, "split_ratio": 0.49, "viz_env": [0.002, 0.359, 0.393, 0.291, 0.205, 0.324, 0.551, 1.0, 0.943, 0.877, 0.695, 0.598, 0.566, 0.555, 0.557, 0.623, 0.326, 0.129, 0.162, 0.805, 0.941, 0.682, 0.412, 0.193, 0.113, 0.121, 0.119, 0.105, 0.074, 0.02, 0.002, 0.0, 0.035, 0.127, 0.154, 0.152, 0.127, 0.135, 0.002, 0.098, 0.264, 0.549, 0.82, 0.518, 0.443, 0.387, 0.25, 0.053, 0.09, 0.15, 0.162, 0.102, 0.168, 0.164, 0.191, 0.209, 0.08, 0.102, 0.074, 0.045, 0.066, 0.037, 0.01, 0.004]};
 
       const imgs = {};
-      let loadedCount = 0;
-      const assetKeys = Object.keys(ASSETS);
+      const failedAssets = new Map(); // key -> preloader result
+      const assetResults = {};
+      const imageKeys = OPENING_ASSETS.filter((a) => a.kind === "image").map((a) => a.key);
 
-      assetKeys.forEach((k) => {
-        const im = new Image();
-        im.onload = () => {
-          loadedCount++;
-          if (loadedCount === assetKeys.length && !animStarted) {
+      // A failed <img> reports complete=true with naturalWidth 0, so
+      // "complete" alone is NOT a load proof — check the pixels.
+      const imgOk = (im) => !!im && im.complete && im.naturalWidth > 0;
+
+      function updateAssetStatusBar() {
+        const bar = root.querySelector("#assetStatusBar");
+        if (!bar) return;
+        if (failedAssets.size === 0) {
+          bar.classList.add("hidden");
+          bar.textContent = "";
+          return;
+        }
+        const parts = [...failedAssets.values()].map((r) => {
+          const reason = ERROR_LABELS[r.error] || "لود نشد";
+          const tries = r.attempts > 0 ? ` (${r.attempts} تلاش)` : "";
+          return `${r.label} — ${reason}${tries}`;
+        });
+        bar.textContent = `دارایی لود نشد: ${parts.join("؛ ")} — جایگزین نمایش داده شد`;
+        bar.classList.remove("hidden");
+      }
+
+      preloadOpeningAssets({
+        failKeys: options.failKeys || [],
+        onAsset: (result) => {
+          assetResults[result.key] = result;
+          if (result.kind === "image" && result.el) imgs[result.key] = result.el;
+          if (result.status === "failed") {
+            failedAssets.set(result.key, result);
+            updateAssetStatusBar();
+          }
+          if (typeof options.onAssets === "function") options.onAssets(result);
+          // Start as soon as every image has settled (loaded OR failed);
+          // audio may still be loading — sound joins when it is ready.
+          if (!animStarted && imageKeys.every((k) => assetResults[k])) {
             startAnimation(false);
           }
-        };
-        im.src = ASSETS[k];
-        imgs[k] = im;
+        }
       });
 
       // Exact coordinates in 560x560 emblem pixel space (verified via beak_grid.png)
@@ -85,6 +110,13 @@ export function createStudioOpening(root, options = {}) {
       const cleanBtn = root.querySelector("#cleanBtn");
       const restoreUiBtn = root.querySelector("#restoreUiBtn");
       const durPills = root.querySelectorAll(".dur-pill");
+      // R1 — resilience UI (visible; NOT in the display:none hidden chrome)
+      const tapSoundLayer = root.querySelector("#tapSoundLayer");
+      const domRing = root.querySelector("#domRing");
+      const domRingGold = root.querySelector("#domRingGold");
+      const domRingCyan = root.querySelector("#domRingCyan");
+      const domWordmarkLight = root.querySelector("#domWordmarkLight");
+      const domWordmarkDark = root.querySelector("#domWordmarkDark");
 
       const BASE_DURATION = AUDIO_META.total_dur || 8.0;
       const VOICE_START = AUDIO_META.voice_start || 4.85;
@@ -101,6 +133,13 @@ export function createStudioOpening(root, options = {}) {
       let doneFired = false;
       let doneTimer = null;
       let hardDoneTimer = null;
+      // R1 — loop / audio state
+      let loopStopped = false;
+      let loopStopNotified = false;
+      let audioCtx = null;
+      let audioAnalyser = null;
+      let audioFreqData = null;
+      let analyserReady = false;
 
       let baseTime = 0;
       let lastFrameTs = 0;
@@ -124,20 +163,43 @@ export function createStudioOpening(root, options = {}) {
         pointerNY = 0;
       });
 
+      // R1 — the entry gesture is the audio-unlock moment: resume the
+      // AudioContext on pointerdown so sound is live by the time the
+      // 8s timeline reaches the eagle cry and the Jarvis voice.
+      stage.addEventListener("pointerdown", () => {
+        ensureAudioContext();
+      });
+
       // ============================================================
       // 3. CANVAS SIZING & PARTICLE POOLS
       // ============================================================
       let W = 0, H = 0, DPR = 1;
+      // R1 — compact (mobile) screens take the cheap path: DOM layers
+      // for ring + lettering, fewer particles, DPR capped at 1.5.
+      function isCompactScreen() {
+        const w = stage.clientWidth || window.innerWidth;
+        const h = stage.clientHeight || window.innerHeight;
+        return w < 520 || h < 560;
+      }
       function resizeCanvas() {
-        DPR = Math.min(window.devicePixelRatio || 1, 2);
+        DPR = Math.min(window.devicePixelRatio || 1, isCompactScreen() ? 1.5 : 2);
         W = stage.clientWidth || window.innerWidth;
         H = stage.clientHeight || window.innerHeight;
         canvas.width = Math.floor(W * DPR);
         canvas.height = Math.floor(H * DPR);
         ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       }
-      window.addEventListener("resize", resizeCanvas);
+      let wasCompact = null;
+      function onResize() {
+        resizeCanvas();
+        const compact = isCompactScreen();
+        // Re-seed the dust pool when crossing the compact threshold.
+        if (wasCompact !== null && compact !== wasCompact) initAmbientDust();
+        wasCompact = compact;
+      }
+      window.addEventListener("resize", onResize);
       resizeCanvas();
+      wasCompact = isCompactScreen();
 
       const ambientDust = [];
       const sparks = [];
@@ -147,7 +209,8 @@ export function createStudioOpening(root, options = {}) {
 
       function initAmbientDust() {
         ambientDust.length = 0;
-        for (let i = 0; i < 72; i++) {
+        const count = isCompactScreen() ? 36 : 72;
+        for (let i = 0; i < count; i++) {
           ambientDust.push({
             x: Math.random() * W,
             y: Math.random() * H,
@@ -271,6 +334,78 @@ export function createStudioOpening(root, options = {}) {
         });
       }
 
+      // R1 — "tap for sound" layer (visible; the old soundBanner is
+      // display:none under Yasin's no-chrome tick and can never show).
+      function showTapSoundLayer() {
+        if (tapSoundLayer) tapSoundLayer.classList.remove("hidden");
+      }
+      function hideTapSoundLayer() {
+        if (tapSoundLayer) tapSoundLayer.classList.add("hidden");
+      }
+
+      // R1 — AudioContext unlock + AnalyserNode (bonus). The timed
+      // VIZ_ENV envelope stays the baseline: if the analyser is
+      // unavailable, beak + waveform run on time alone.
+      function ensureAudioContext() {
+        if (audioCtx) {
+          if (audioCtx.state === "suspended") {
+            audioCtx.resume().then(() => {
+              if (audioCtx.state === "running") hideTapSoundLayer();
+            }).catch(() => {});
+          } else if (audioCtx.state === "running") {
+            hideTapSoundLayer();
+          }
+          return audioCtx;
+        }
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        try {
+          audioCtx = new AC();
+          if (audioCtx.state === "suspended") {
+            audioCtx.resume().then(() => {
+              if (audioCtx.state === "running") hideTapSoundLayer();
+            }).catch(() => {});
+          }
+          ensureAnalyser();
+        } catch (e) {
+          audioCtx = null;
+        }
+        return audioCtx;
+      }
+
+      function ensureAnalyser() {
+        if (!audioCtx || analyserReady) return;
+        try {
+          audioAnalyser = audioCtx.createAnalyser();
+          audioAnalyser.fftSize = 256;
+          audioAnalyser.smoothingTimeConstant = 0.55;
+          audioFreqData = new Uint8Array(audioAnalyser.frequencyBinCount);
+          for (const a of [introAudio, eagleAudio, jarvisAudio]) {
+            audioCtx.createMediaElementSource(a).connect(audioAnalyser);
+          }
+          audioAnalyser.connect(audioCtx.destination);
+          analyserReady = true;
+        } catch (e) {
+          analyserReady = false;
+          audioAnalyser = null;
+        }
+      }
+
+      // Real frequency energy [0..1] while audio is playing, or null
+      // when the analyser is unavailable / silent (timed fallback wins).
+      function sampleAudioEnergy() {
+        if (!analyserReady || !audioAnalyser || !audioFreqData) return null;
+        try {
+          audioAnalyser.getByteFrequencyData(audioFreqData);
+        } catch (e) {
+          return null;
+        }
+        let sum = 0;
+        for (let i = 0; i < audioFreqData.length; i++) sum += audioFreqData[i];
+        const avg = sum / audioFreqData.length / 255;
+        return avg > 0.02 ? avg : null;
+      }
+
       function playIntroSound(fromBaseSec = 0) {
         if (isMuted) return;
         syncAudioRate();
@@ -283,9 +418,13 @@ export function createStudioOpening(root, options = {}) {
             p.then(() => {
               audioUnlocked = true;
               soundBanner.classList.add("hidden");
+              // play() resolves even through a suspended context (silent):
+              // only hide the tap layer when sound is really running.
+              if (!audioCtx || audioCtx.state === "running") hideTapSoundLayer();
+              else showTapSoundLayer();
             }).catch(() => {
               audioUnlocked = false;
-              soundBanner.classList.remove("hidden");
+              showTapSoundLayer();
             });
           }
         } catch (e) {}
@@ -435,11 +574,48 @@ export function createStudioOpening(root, options = {}) {
         ctx.restore();
       }
 
+      // R1 — visible fallback when the eagle emblem itself failed to
+      // load: golden rings + emerald disc + a gold "J" lettermark.
+      // Never a blank area where the emblem should be.
+      function drawEmblemFallback(emblemSize, alpha) {
+        const half = emblemSize / 2;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const disc = ctx.createRadialGradient(0, 0, 0, 0, 0, half * 0.96);
+        disc.addColorStop(0, "#1a6b5d");
+        disc.addColorStop(0.7, "#0f3d36");
+        disc.addColorStop(1, "#082723");
+        ctx.fillStyle = disc;
+        ctx.beginPath();
+        ctx.arc(0, 0, half * 0.96, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(230, 179, 90, 0.95)";
+        ctx.lineWidth = Math.max(2, emblemSize * 0.012);
+        ctx.beginPath();
+        ctx.arc(0, 0, half * 0.96, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(72, 229, 207, 0.55)";
+        ctx.lineWidth = Math.max(1, emblemSize * 0.006);
+        ctx.beginPath();
+        ctx.arc(0, 0, half * 0.78, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "#e6b35a";
+        ctx.font = `700 ${emblemSize * 0.52}px Georgia, 'Times New Roman', serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("J", 0, emblemSize * 0.02);
+        ctx.font = `500 ${Math.max(9, emblemSize * 0.045)}px Inter, sans-serif`;
+        ctx.fillStyle = "rgba(247, 241, 227, 0.85)";
+        ctx.fillText("JARVIS STUDIO", 0, half * 0.62);
+        ctx.restore();
+      }
+
       function drawAnimatedEmblemWithBeak(emblemSize, beakOpen) {
         const half = emblemSize / 2;
 
         // If beak is closed, render the 100% original crisp emblem directly!
-        if (beakOpen <= 0.008 || !imgs.emblemBaseOpen.complete || !imgs.lowerBeak.complete || !imgs.upperBeak.complete) {
+        // (imgOk, not .complete: a failed image reports complete=true.)
+        if (beakOpen <= 0.008 || !imgOk(imgs.emblemBaseOpen) || !imgOk(imgs.lowerBeak) || !imgOk(imgs.upperBeak)) {
           ctx.drawImage(imgs.emblem, -half, -half, emblemSize, emblemSize);
           return;
         }
@@ -514,7 +690,7 @@ export function createStudioOpening(root, options = {}) {
         ctx.restore();
       }
 
-      function drawJarvisVoiceWaveform(cx, y, width, voiceProgress, activeStrength, ts) {
+      function drawJarvisVoiceWaveform(cx, y, width, voiceProgress, activeStrength, ts, audioEnergy = null) {
         if (activeStrength <= 0.01) return;
         const barCount = 44;
         const halfW = width * 0.5;
@@ -523,9 +699,12 @@ export function createStudioOpening(root, options = {}) {
         ctx.save();
         ctx.globalCompositeOperation = isLightTheme ? "source-over" : "lighter";
 
-        // Current energy from real extracted voice envelope
+        // Current energy: live AnalyserNode data when it exists, else
+        // the timed VIZ_ENV envelope (the baseline — never the reverse).
         const envIdx = Math.min(VIZ_ENV.length - 1, Math.max(0, Math.floor(voiceProgress * VIZ_ENV.length)));
-        const curEnergy = VIZ_ENV.length ? VIZ_ENV[envIdx] : 0.6;
+        const curEnergy = audioEnergy != null
+          ? clamp01(0.2 + audioEnergy)
+          : (VIZ_ENV.length ? VIZ_ENV[envIdx] : 0.6);
 
         for (let i = 0; i < barCount; i++) {
           const norm = i / (barCount - 1); // 0..1
@@ -561,6 +740,64 @@ export function createStudioOpening(root, options = {}) {
       }
 
       // ============================================================
+      // 6b. R1 — MOBILE DOM LAYERS (accelerated SVG/CSS)
+      // On compact screens the energy ring and the wordmark reveal run
+      // as DOM/SVG layers (composited, no per-pixel canvas work); the
+      // particles + waveform stay on the single canvas.
+      // ============================================================
+      function updateDomRing(cx, cy, radius, prog, fade, ts) {
+        if (!domRing) return;
+        const size = radius * 2.6;
+        domRing.style.display = "block";
+        domRing.style.width = `${size}px`;
+        domRing.style.height = `${size}px`;
+        domRing.style.left = `${cx - size / 2}px`;
+        domRing.style.top = `${cy - size / 2}px`;
+        const len = clamp01(prog) * 100;
+        if (domRingGold) {
+          domRingGold.setAttribute("stroke-dasharray", `${len.toFixed(1)} 100`);
+          domRingGold.setAttribute("opacity", String(0.9 * fade));
+          domRingGold.setAttribute("transform", `rotate(${(-90 + (ts * 0.02) % 360).toFixed(1)} 50 50)`);
+        }
+        if (domRingCyan) {
+          domRingCyan.setAttribute("stroke-dasharray", `${len.toFixed(1)} 100`);
+          domRingCyan.setAttribute("opacity", String(0.7 * fade));
+          domRingCyan.setAttribute("transform", `rotate(${(-90 - (ts * 0.03) % 360).toFixed(1)} 50 50)`);
+        }
+      }
+
+      function updateDomWordmark(cx, wordmarkY, wordmarkW, wordmarkH, prog) {
+        const el = isLightTheme ? domWordmarkDark : domWordmarkLight;
+        const other = isLightTheme ? domWordmarkLight : domWordmarkDark;
+        if (other) other.style.display = "none";
+        if (!el) return;
+        // A failed wordmark must never show a broken-image icon: the
+        // canvas text fallback draws it instead (Layer G branch).
+        const wmKey = isLightTheme ? "wordmarkDark" : "wordmarkLight";
+        if (failedAssets.has(wmKey)) {
+          el.style.display = "none";
+          return;
+        }
+        if (prog <= 0.005) {
+          el.style.display = "none";
+          return;
+        }
+        el.style.display = "block";
+        el.style.width = `${wordmarkW}px`;
+        el.style.height = `${wordmarkH}px`;
+        el.style.left = `${cx - wordmarkW / 2}px`;
+        el.style.top = `${wordmarkY}px`;
+        // Reveal left -> right (physical clip, not logical: RTL-safe).
+        el.style.clipPath = `inset(0 ${((1 - prog) * 100).toFixed(1)}% 0 0)`;
+      }
+
+      function hideDomLayers() {
+        if (domRing) domRing.style.display = "none";
+        if (domWordmarkLight) domWordmarkLight.style.display = "none";
+        if (domWordmarkDark) domWordmarkDark.style.display = "none";
+      }
+
+      // ============================================================
       // 7. MAIN 60 FPS CINEMATIC RENDER LOOP
       // ============================================================
       function renderFrame(ts) {
@@ -574,9 +811,12 @@ export function createStudioOpening(root, options = {}) {
         }
         // Port addition: the original loop never ends; fire onDone once
         // shortly after the 8s timeline completes so the desk can take over.
+        // R1 — the loop itself stops here too: after the 0.9s tail the
+        // stage is a still frame, and rAF must not spin forever.
         if (baseTime >= BASE_DURATION && !doneFired) {
           doneFired = true;
           doneTimer = setTimeout(() => {
+            stopLoop();
             if (typeof options.onDone === "function") options.onDone();
           }, 900);
         }
@@ -595,6 +835,9 @@ export function createStudioOpening(root, options = {}) {
         const cx = layout.cx + smoothPX * 6;
         const cy = layout.cy + smoothPY * 5;
         const { emblemSize, emblemRadius, wordmarkW, wordmarkH, wordmarkY } = layout;
+        // R1 — compact screens: ring + lettering move to DOM layers.
+        const useDomLayers = isCompactScreen();
+        if (!useDomLayers) hideDomLayers();
 
         // One-shot triggers
         if (!wingBurstFired && baseTime >= 1.32) {
@@ -619,12 +862,22 @@ export function createStudioOpening(root, options = {}) {
           if (manualVoiceAge > VOICE_DUR + 0.45) manualVoiceAge = -1;
         }
 
+        // R1 — live frequency energy (null when the analyser is absent:
+        // the timed envelope below is the baseline either way).
+        const audioEnergy = sampleAudioEnergy();
+
         // Compute active beak open amount (from main timeline OR manual test button)
         const timelineEagleAge = baseTime >= 2.08 ? (baseTime - 2.08) : -1;
-        const beakOpen = Math.max(
+        const timedBeak = Math.max(
           computeBeakOpenAmount(timelineEagleAge),
           computeBeakOpenAmount(manualEagleAge)
         );
+        // R1 — AnalyserNode bonus: real frequency energy lifts the beak
+        // above the timed baseline while the eagle is actually crying.
+        let beakOpen = timedBeak;
+        if (audioEnergy != null && (timelineEagleAge >= 0 || manualEagleAge >= 0)) {
+          beakOpen = clamp01(Math.max(timedBeak, audioEnergy * 1.6));
+        }
 
         // Emit sonic soundwave arcs directly from open beak while eagle is crying!
         if (beakOpen > 0.35) {
@@ -749,7 +1002,13 @@ export function createStudioOpening(root, options = {}) {
         // ----------------------------------------------------------
         const ringProg = easeInOutQuart(baseTime / 1.44);
         const ringFade = baseTime < 2.2 ? 1.0 : clamp01(1 - (baseTime - 2.2) / 0.75);
-        if (ringProg > 0.005 && ringFade > 0.01) {
+        if (useDomLayers) {
+          if (ringProg > 0.005 && ringFade > 0.01) {
+            updateDomRing(cx, cy, emblemRadius, ringProg, ringFade, ts);
+          } else if (domRing) {
+            domRing.style.display = "none";
+          }
+        } else if (ringProg > 0.005 && ringFade > 0.01) {
           ctx.save();
           ctx.globalCompositeOperation = isLightTheme ? "source-over" : "lighter";
           const startAng = -Math.PI / 2;
@@ -828,7 +1087,9 @@ export function createStudioOpening(root, options = {}) {
         // LAYER F: Main Emblem + LIVE ANIMATED OPEN BEAK + Sheen
         // ----------------------------------------------------------
         const embReveal = clamp01((baseTime - 1.2) / 1.0);
-        if (embReveal > 0.005 && imgs.emblem && imgs.emblem.complete) {
+        // R1 — the emblem draws when it loaded; when it finally failed,
+        // the golden-emerald fallback draws instead (never blank).
+        if (embReveal > 0.005 && (imgOk(imgs.emblem) || failedAssets.has("emblem"))) {
           const scaleE = baseTime < 2.2
             ? lerp(0.58, 1.03, easeOutBack(embReveal))
             : lerp(1.03, 1.0, easeOutCubic((baseTime - 2.2) / 0.85));
@@ -849,7 +1110,11 @@ export function createStudioOpening(root, options = {}) {
           ctx.shadowBlur = isLightTheme ? 28 : 44;
           ctx.shadowOffsetY = 12;
 
-          drawAnimatedEmblemWithBeak(emblemSize, beakOpen);
+          if (imgOk(imgs.emblem)) {
+            drawAnimatedEmblemWithBeak(emblemSize, beakOpen);
+          } else {
+            drawEmblemFallback(emblemSize, embAlpha);
+          }
 
           ctx.shadowColor = "transparent";
           ctx.shadowBlur = 0;
@@ -938,20 +1203,39 @@ export function createStudioOpening(root, options = {}) {
           }
         }
 
-        if (wmProg > 0.005 && wmImg && wmImg.complete) {
+        if (wmProg > 0.005) {
           const wx = cx - wordmarkW / 2;
           const wy = wordmarkY + lerp(10, 0, easeOutCubic((baseTime - VOICE_START) / 0.75));
+          const wmKey = isLightTheme ? "wordmarkDark" : "wordmarkLight";
+          const wmFailed = failedAssets.has(wmKey);
 
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(wx - 10, wy - 16, (wordmarkW + 20) * wmProg, wordmarkH + 32);
-          ctx.clip();
+          if (useDomLayers && !wmFailed) {
+            // R1 — mobile: the reveal runs on the DOM <img> layer.
+            updateDomWordmark(cx, wordmarkY, wordmarkW, wordmarkH, wmProg);
+          } else if (imgOk(wmImg)) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(wx - 10, wy - 16, (wordmarkW + 20) * wmProg, wordmarkH + 32);
+            ctx.clip();
 
-          const glowBoost = voiceStrength * 14;
-          ctx.shadowColor = isLightTheme ? "rgba(15, 61, 54, 0.16)" : `rgba(230, 179, 90, ${0.34 + voiceStrength * 0.3})`;
-          ctx.shadowBlur = (isLightTheme ? 10 : 18) + glowBoost;
-          ctx.drawImage(wmImg, wx, wy, wordmarkW, wordmarkH);
-          ctx.restore();
+            const glowBoost = voiceStrength * 14;
+            ctx.shadowColor = isLightTheme ? "rgba(15, 61, 54, 0.16)" : `rgba(230, 179, 90, ${0.34 + voiceStrength * 0.3})`;
+            ctx.shadowBlur = (isLightTheme ? 10 : 18) + glowBoost;
+            ctx.drawImage(wmImg, wx, wy, wordmarkW, wordmarkH);
+            ctx.restore();
+          } else if (wmFailed) {
+            // R1 — wordmark failed: paint the name as gold text, same reveal.
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(wx - 10, wy - 16, (wordmarkW + 20) * wmProg, wordmarkH + 32);
+            ctx.clip();
+            ctx.fillStyle = isLightTheme ? "#0f3d36" : "#e6b35a";
+            ctx.font = `600 ${wordmarkH * 1.15}px Georgia, serif`;
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText("Jarvis Studio", wx, wy + wordmarkH / 2);
+            ctx.restore();
+          }
 
           // Glowing holographic gold-cyan calligraphy stylus tracking the active cursive stroke!
           if (wmProg > 0.02 && wmProg < 0.99) {
@@ -962,12 +1246,15 @@ export function createStudioOpening(root, options = {}) {
               spawnSparks(penX, penY, 1, 16, 72, Math.random() > 0.4 ? "#ffe49e" : "#48e5cf", 0.55);
             }
           }
+        } else if (useDomLayers) {
+          updateDomWordmark(cx, wordmarkY, wordmarkW, wordmarkH, 0);
         }
 
         // Live J.A.R.V.I.S. Holographic Voice Waveform beneath cursive text while speaking!
+        // (Waveform stays on the single canvas on every screen — R1.)
         const waveY = wordmarkY + wordmarkH + 16;
         if (voiceStrength > 0.01) {
-          drawJarvisVoiceWaveform(cx, waveY, Math.min(260, wordmarkW * 0.72), voiceProgress, voiceStrength, ts);
+          drawJarvisVoiceWaveform(cx, waveY, Math.min(260, wordmarkW * 0.72), voiceProgress, voiceStrength, ts, audioEnergy);
         }
 
         // Crisp Golden Divider & Tagline Reveal after voice settles
@@ -1023,7 +1310,9 @@ export function createStudioOpening(root, options = {}) {
         }
 
         ctx.restore();
-        rafId = requestAnimationFrame(renderFrame);
+        // R1 — after the 8s tail the loop is stopped (see stopLoop);
+        // never reschedule once stopped, on any path.
+        if (!loopStopped) rafId = requestAnimationFrame(renderFrame);
       }
 
       // ============================================================
@@ -1031,6 +1320,8 @@ export function createStudioOpening(root, options = {}) {
       // ============================================================
       function startAnimation(withSound = true) {
         animStarted = true;
+        loopStopped = false;
+        loopStopNotified = false;
         if (rafId) cancelAnimationFrame(rafId);
         baseTime = 0;
         lastFrameTs = 0;
@@ -1044,6 +1335,11 @@ export function createStudioOpening(root, options = {}) {
         shockwaves.length = 0;
         beakSonicArcs.length = 0;
 
+        // R1 — unlock audio on the entry path; if the context is still
+        // suspended, the tap-for-sound layer appears (see playIntroSound).
+        ensureAudioContext();
+        if (audioCtx && audioCtx.state === "suspended") showTapSoundLayer();
+
         if (withSound) {
           playIntroSound(0);
         } else {
@@ -1052,11 +1348,36 @@ export function createStudioOpening(root, options = {}) {
         rafId = requestAnimationFrame(renderFrame);
       }
 
+      // R1 — full stop of the animation loop (after the 8s tail, on the
+      // hard fallback, and on destroy). Fires onLoopStopped once.
+      function stopLoop() {
+        if (loopStopped) return;
+        loopStopped = true;
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        if (!loopStopNotified) {
+          loopStopNotified = true;
+          if (typeof options.onLoopStopped === "function") options.onLoopStopped();
+        }
+      }
+
       soundBanner.addEventListener("click", (e) => {
         e.stopPropagation();
         isMuted = false;
         updateMuteUI();
         startAnimation(true);
+      });
+
+      // R1 — the visible "tap for sound" layer: a tap resumes the
+      // AudioContext and re-seeks the intro track to the timeline.
+      tapSoundLayer.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ensureAudioContext();
+        isMuted = false;
+        updateMuteUI();
+        playIntroSound(baseTime);
       });
 
       stage.addEventListener("click", (e) => {
@@ -1150,17 +1471,20 @@ export function createStudioOpening(root, options = {}) {
       hardDoneTimer = setTimeout(() => {
         if (!doneFired) {
           doneFired = true;
+          // Only report the loop as stopped if it ever ran; if the
+          // animation never started there was no loop to stop.
+          if (animStarted) stopLoop();
           if (typeof options.onDone === "function") options.onDone();
         }
       }, 12000);
 
       function destroy() {
-        if (rafId) cancelAnimationFrame(rafId);
+        stopLoop();
         if (doneTimer) clearTimeout(doneTimer);
         if (hardDoneTimer) clearTimeout(hardDoneTimer);
-        window.removeEventListener("resize", resizeCanvas);
+        window.removeEventListener("resize", onResize);
         stopAllAudio();
       }
 
-      return { destroy, startAnimation };
+      return { destroy, startAnimation, isLoopStopped: () => loopStopped };
     }
