@@ -25,7 +25,7 @@
     StudioGatewayError
   } from '../lib/studio-gateway.js'
   import StudioOpening from './StudioOpening.svelte'
-  import { setBusy, clearBusy, APP_VERSION } from '../lib/version-check.js'
+  import { setBusy, clearBusy, APP_VERSION, isBusy, isFreshVersionAvailable } from '../lib/version-check.js'
 
   // Phase R0 — wake state machine: sleeping -> waking -> launching ->
   // ready | error. The wake call itself polls with the server's
@@ -419,6 +419,13 @@
   }
 
   async function startFlow() {
+    // رفع F2 — چک صریح نسخه پیش از بیداری: اگر نسخهٔ تازه‌ای هست، رفرش
+    // کن تا بیداری با باندل تازه شروع شود؛ اگر چک ناموفق شد (شبکه) یا
+    // کاربر مشغول است، بیداری مسدود نمی‌شود و با همین باندل ادامه می‌یابد.
+    if (!isBusy() && (await isFreshVersionAvailable())) {
+      window.location.reload()
+      return
+    }
     const mySeq = ++flowSeq
     phase = 'waking'
     wakeState = 'sleeping'
