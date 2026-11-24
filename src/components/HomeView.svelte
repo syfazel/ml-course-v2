@@ -213,8 +213,7 @@
       </div>
       <h3 class="text-base font-extrabold">{DAY0_LESSON.title}</h3>
       <p class="text-xs text-[var(--ink-soft)] leading-6">
-        ۴ مرحله مفهومی + ۶ تمرین جهت‌یابی، متصل به جدول <code>day_progress</code> با کلید
-        <code>unit_code = 'day-0'</code>.
+        ۴ مرحله مفهومی + ۶ تمرین جهت‌یابی که پیشرفتت را ثبت می‌کنند.
       </p>
       <button
         type="button"
@@ -239,7 +238,7 @@
         </p>
       {:else}
         <p class="text-xs text-[var(--ink-soft)] leading-6">
-          هنوز تلاشی ثبت نشده است. تصحیح منحصراً از طریق <code>submit_quiz_attempt</code> در سرور انجام می‌شود.
+          هنوز تلاشی ثبت نشده است. تصحیح آزمون در سرور انجام می‌شود.
         </p>
       {/if}
       <button

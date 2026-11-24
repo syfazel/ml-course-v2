@@ -53,7 +53,7 @@
   <header class="glass-card p-5 sm:p-6 space-y-2">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <span class="text-xs font-bold text-[var(--amber-dark)]">
-        تصحیح سروری — RPC: <code>submit_quiz_attempt</code>
+        تصحیح در سرور انجام می‌شود
       </span>
       <span class="badge bg-red-100 text-red-900 border-0 font-bold">
         دروازه دقیق ۶۰٫۰٪
