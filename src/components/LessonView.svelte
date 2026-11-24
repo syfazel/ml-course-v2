@@ -307,6 +307,18 @@
         dataset={COURSE_CONTENT.labDatasets?.[String(lesson.id)] || null}
         labCode={`lab-${lesson.id}`}
       />
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="btn-ml-ghost text-sm"
+          onclick={() => router.go(`#/studio?lab=lab-${lesson.id}`)}
+        >
+          تمرین در Jarvis Studio
+        </button>
+        <span class="text-xs text-[var(--ink-soft)]">
+          با کرنل واقعی (TensorFlow) — Ctrl+J هم همان‌جا می‌برد.
+        </span>
+      </div>
     </section>
   {/if}
 
