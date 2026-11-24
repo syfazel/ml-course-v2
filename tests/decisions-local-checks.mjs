@@ -169,14 +169,18 @@ try {
   };
   const pressCtrlK = () => pressKey('KeyK', 'k', 2);
   const pressCtrlJ = () => pressKey('KeyJ', 'j', 2);
+  // setInput با تشخیص برگشتی (برای اشکال‌زدایی: 'OK:<value>' یعنی موفق).
   const setInput = (sel, v) => evalJs(`(() => {
     const el = document.querySelector(${JSON.stringify(sel)});
-    if (!el) return false;
-    const proto = Object.getPrototypeOf(el);
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-    setter.call(el, v);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
+    if (!el) return 'NO-EL';
+    try {
+      const proto = Object.getPrototypeOf(el);
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (!desc || !desc.set) return 'NO-SETTER';
+      desc.set.call(el, ${JSON.stringify(v)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return 'OK:' + el.value;
+    } catch (err) { return 'THREW:' + err.message; }
   })()`);
 
   async function onRequestPaused(params) {
@@ -330,7 +334,7 @@ try {
   const p1NoStudio = await evalJs(`!location.hash.startsWith('#/studio')`);
   check('P1b: Ctrl+K does not open the studio', p1NoStudio === true);
   const p2Typed = await setInput('input[aria-label="جست‌وجوی درس"]', 'خط قیمت');
-  check('P2a: query typed into the palette', p2Typed === true);
+  check('P2a: query typed into the palette', typeof p2Typed === 'string' && p2Typed.startsWith('OK:'), String(p2Typed));
   await sleep(400);
   const p2Count = await evalJs(`document.querySelectorAll('[data-palette-item]').length`);
   check('P2b: filter "خط قیمت" leaves exactly 1 unit', p2Count === 1, `count=${p2Count}`);
@@ -344,14 +348,16 @@ try {
   check('P3a: Enter navigates to #/lesson/2', p3Hash, await evalJs('location.hash'));
   const p3Closed = await evalJs(`!document.querySelector('[data-palette-panel]')`);
   check('P3b: palette closes after navigation', p3Closed === true);
+  // LessonView's H1 is the lesson themeName («تپه و کاسه»), not the unit
+  // title — the unit title lives in the sidebar list, not in main.
   const p3Lesson = await waitFor(async () => {
     const mainText = await evalJs(`(() => {
       const m = document.querySelector('main');
       return m ? m.innerText : '';
     })()`);
-    return typeof mainText === 'string' && mainText.includes('خط قیمت، کاسه هزینه و پایین رفتن از تپه');
+    return typeof mainText === 'string' && mainText.includes('تپه و کاسه');
   }, 8000);
-  check('P3c: lesson 1-B page renders (main content, not the sidebar list)', p3Lesson);
+  check('P3c: lesson 1-B page renders (H1 themeName in main, not the sidebar list)', p3Lesson);
 
   // P4: arrow-key navigation across several matches
   await pressCtrlK();
@@ -395,7 +401,7 @@ try {
       const m = document.querySelector('main');
       return m ? m.innerText : '';
     })()`);
-    return typeof mainText === 'string' && mainText.includes('خط قیمت، کاسه هزینه و پایین رفتن از تپه');
+    return typeof mainText === 'string' && mainText.includes('تپه و کاسه');
   }, 8000);
   await pressCtrlJ();
   const p6Studio = await waitFor(async () => (await evalJs('location.hash')).startsWith('#/studio'), 5000);
