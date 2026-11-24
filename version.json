@@ -1,5 +1,7 @@
 {
-  "hash": "dc153f0",
-  "commit": "dc153f0",
-  "builtAt": "2026-11-24T18:53:44.228Z"
+  "hash": "0fdf745",
+  "commit": "0fdf745",
+  "builtAt": "2026-11-24T20:02:47.326Z",
+  "wakeVersion": "v5",
+  "gatewayCommit": "unknown"
 }
