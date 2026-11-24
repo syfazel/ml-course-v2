@@ -4,3 +4,6 @@ dist/
 .env.local
 .env.*.local
 *.log
+
+# Phase 5: local harness run artifacts (not committed; the tree must stay clean for builds)
+tests/phase5-local-results.json

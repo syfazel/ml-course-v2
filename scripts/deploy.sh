@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # deploy.sh — تنها راه مجاز دیپلوی فرانت‌اند به GitHub Pages (فاز ۱، قانون R-5).
 #
-# ترتیب: بیلد (با گیت‌های vite.config.js) → pre-deploy-check → در ورک‌تری
+# ترتیب: بیلد (با گیت‌های vite.config.js) → pre-deploy-check → تست دود
+# پیش‌دیپلوی (فاز ۵، F11: بیلد واقعاً در مرورگر بالا می‌آید) → در ورک‌تری
 # دیپلوی: fetch origin/gh-pages + ریست (جلوگیری از non-fast-forward از
 # gh-pages کهنهٔ محلی) → rsync → کامیت → پوش → curl پس از پوش با صبر
 # ۱۲۰ ثانیه‌ای و تطبیق هش باندل و version.json.
@@ -68,6 +69,12 @@ if [ "$DRY_RUN" = "1" ]; then
 else
   "$ROOT/scripts/pre-deploy-check.sh" || fail "pre-deploy-check رد شد."
 fi
+
+# 2.5. تست دود پیش‌دیپلوی (فاز ۵، F11): بیلدِ ساخته‌شده واقعاً در مرورگر
+# بالا می‌آید — خانه، ورود، #/status، #/intro-test. بدون نشست/توکن واقعی؛
+# در dry-run هم اجرا می‌شود (فقط dist محلی را سرو می‌کند، هیچ پوشی نیست).
+echo "[deploy] مرحلهٔ ۲/۵ (دود): smoke_predeploy…"
+node "$ROOT/tests/smoke_predeploy.mjs" || fail "تست دود پیش‌دیپلوی رد شد."
 
 BUNDLE="$(basename "$(ls "$ROOT"/dist/assets/index-*.js | head -n 1)")"
 
