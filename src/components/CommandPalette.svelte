@@ -3,13 +3,15 @@
   import { COURSE_CONTENT } from '../data/course-content.js'
   import { router } from '../lib/router.svelte.js'
   import { auth } from '../lib/auth-store.svelte.js'
+  import { paletteState, openPalette, closePalette } from '../lib/command-palette.svelte.js'
 
   // پالت فرمان Ctrl+K — پرش سریع میان ۵۵ واحد دوره (تصمیم‌های واگذارشده،
   // مورد ۴). نام واحدها از همان منبع سایدبار است: «کد — عنوان». با میانبور
   // Ctrl+J استودیو تداخل ندارد (KeyK در برابر KeyJ)؛ وسط تایپ در فیلد
   // دیگری باز نمی‌شود؛ فقط در چیدمانِ واردشده mount می‌شود، پس در صفحهٔ
-  // ورود و داخل استودیو اصلاً وجود ندارد.
-  let open = $state(false)
+  // ورود و داخل استودیو اصلاً وجود ندارد. باز شدن از میانبور صفحه‌کلید
+  // و از دکمهٔ لمسی «جستجوی سریع» سایدبار یک مسیر است: تابع مشترک
+  // openPalette در lib/command-palette.svelte.js.
   let query = $state('')
   let active = $state(0)
   let inputEl = $state(null)
@@ -41,7 +43,7 @@
     return unit.id === 0 ? '#/lesson/day-0' : `#/lesson/${unit.id}`
   }
   function close() {
-    open = false
+    closePalette()
     query = ''
     active = 0
   }
@@ -62,13 +64,13 @@
           t.tagName === 'SELECT' ||
           t.isContentEditable)
       // وسط تایپ در فیلد دیگری باز نمی‌شود؛ وقتی خودش باز است فقط فوکوس می‌گیرد.
-      if (typing && !open) return
+      if (typing && !paletteState.open) return
       e.preventDefault()
-      if (!open) open = true
+      if (!paletteState.open) openPalette()
       else inputEl?.focus()
       return
     }
-    if (e.key === 'Escape' && open) {
+    if (e.key === 'Escape' && paletteState.open) {
       e.preventDefault()
       close()
     }
@@ -88,7 +90,7 @@
   }
 
   $effect(() => {
-    if (open) inputEl?.focus()
+    if (paletteState.open) inputEl?.focus()
   })
 
   onMount(() => {
@@ -97,7 +99,7 @@
   })
 </script>
 
-{#if open}
+{#if paletteState.open}
   <div
     class="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[15vh]"
     style="background: rgba(30, 25, 22, 0.35);"

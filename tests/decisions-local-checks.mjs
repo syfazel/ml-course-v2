@@ -438,6 +438,44 @@ try {
   const r2Hash = await waitFor(async () => (await evalJs('location.hash')) === '#/', 5000);
   check('R2c: direct entry without origin returns to course home #/ (not lesson 0)', r2Hash, await evalJs('location.hash'));
 
+  // ===== T: ورودی لمسی پالت از سایدبار (390px) =====
+  resetStub('ok');
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await seedAndLoad('#/', { 'ml-course-v2-auth': fakeSessionJSON(3600) });
+  const tHome = await waitFor(async () => await hasText('سلام، Test Teacher'), 8000);
+  check('T0: home renders at 390px with the seeded session', tHome);
+  const tVisible = await evalJs(`(() => {
+    const b = document.querySelector('[data-open-palette]');
+    if (!b) return false;
+    const r = b.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight;
+  })()`);
+  check('T1: sidebar quick-search button is visible at 390px', tVisible === true);
+  const tClicked = await evalJs(`(() => {
+    const b = document.querySelector('[data-open-palette]');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  check('T2: sidebar quick-search button clicked', tClicked === true);
+  const tOpen = await waitFor(async () => await hasText('پرش سریع میان درس‌ها'), 5000);
+  check('T3: tapping the sidebar button opens the palette', tOpen);
+  await pressKey('Escape', 'Escape');
+  await sleep(300);
+  const tClosed = await evalJs(`!document.querySelector('[data-palette-panel]')`);
+  check('T4: Esc closes the palette opened by touch', tClosed === true);
+  // دکمه فقط در چیدمانِ واردشده است: نه در صفحهٔ ورود، نه داخل استودیو.
+  await seedAndLoad('#/login', {});
+  await waitFor(async () => await hasText('ورود به دوره'), 8000);
+  const tNoButtonLogin = await evalJs(`!document.querySelector('[data-open-palette]')`);
+  check('T5: quick-search button is absent on the login page', tNoButtonLogin === true);
+  resetStub('ok');
+  await seedAndLoad('#/studio', { 'ml-course-v2-auth': fakeSessionJSON(3600) });
+  const tStudioCard = await waitFor(async () => await hasText('بلیط ورود منقضی شده است'), 10000);
+  check('T6a: studio error card appears', tStudioCard);
+  const tNoButtonStudio = await evalJs(`!document.querySelector('[data-open-palette]')`);
+  check('T6b: quick-search button is absent inside the studio', tNoButtonStudio === true);
+
   // ===== no unhandled page exceptions during the run =====
   check('X1: no unhandled page exceptions', pageExceptions.length === 0, pageExceptions.join(' | '));
 

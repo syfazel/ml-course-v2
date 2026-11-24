@@ -2,6 +2,7 @@
   import { auth } from '../lib/auth-store.svelte.js'
   import { signOut } from '../lib/auth.js'
   import { router } from '../lib/router.svelte.js'
+  import { openPalette } from '../lib/command-palette.svelte.js'
   import { COURSE_TREE } from '../data/day0-content.js'
   import { COURSE_CONTENT } from '../data/course-content.js'
 
@@ -41,6 +42,14 @@
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
       ? '⌘J'
       : 'Ctrl+J'
+
+  // پالت فرمان — نشان کلید همان الگوی استودیو (⌘K در مک/آیفون، Ctrl+K
+  // در بقیه)؛ دکمهٔ «جستجوی سریع» ورودی لمسی پالت است و همان تابع
+  // openPalette میانبور صفحه‌کلید را صدا می‌زند.
+  const paletteKeyHint =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+      ? '⌘K'
+      : 'Ctrl+K'
 
   // کارت شیشه‌ای یک‌بارمصرف روز اول (سنجش، کشف‌پذیری) — زیر دکمهٔ ورود به استودیو.
   // فقط یک پرچم راهنما در localStorage؛ هیچ نشست/توکنی اینجا ذخیره نمی‌شود.
@@ -130,6 +139,17 @@
           <span>ورود به استودیو</span>
         </span>
         <span class="text-xs opacity-80" dir="ltr">{studioKeyHint}</span>
+      </button>
+
+      <!-- پالت فرمان — ورودی لمسی جستجوی سریع برای موبایل؛ همان مسیر Ctrl+K -->
+      <button
+        type="button"
+        data-open-palette
+        class="w-full text-right px-3 py-2.5 rounded-xl text-sm font-medium transition cursor-pointer flex items-center justify-between hover:bg-white/70"
+        onclick={openPalette}
+      >
+        <span>جستجوی سریع</span>
+        <span class="text-xs opacity-75" dir="ltr">{paletteKeyHint}</span>
       </button>
 
       <!-- کارت شیشه‌ای یک‌بارمصرف روز اول -->
