@@ -725,8 +725,8 @@
     {#if gateway && !gateway.hasSessionHeader}
       <div class="mx-auto mt-3 w-full max-w-[1400px] px-4">
         <p class="rounded-xl border px-3 py-2 text-xs leading-6" style="border-color: rgba(181,114,10,.4); background: rgba(181,114,10,.08); color: var(--saffron-text)">
-          نشست با کوکی برقرار شد؛ چون مرورگر کوکی Lax را در fetch نمی‌فرستد، اجرای سلول ممکن است ۴۰۱ بدهد.
-          رفع آن تغییر کوچک Gateway است (پذیرش هدر Authorization) — در انتظار تأیید یاسین.
+          نشست فقط با کوکی برقرار شد؛ چون مرورگر کوکی Lax را در fetch نمی‌فرستد، اجرای سلول ممکن است ۴۰۱ بدهد.
+          پشتیبانی از هدر Authorization در Gateway تأیید و دیپلوی شده (۲۴ نوامبر) — این پیام یعنی Gateway در حال اجرا هنوز نسخهٔ قدیمی است؛ با بیداری دوباره نسخهٔ تازه می‌آید.
         </p>
       </div>
     {/if}

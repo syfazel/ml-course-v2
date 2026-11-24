@@ -10,11 +10,12 @@
 //   NOT sent by the browser on a cross-site fetch (github.io -> github.dev),
 //   so the cookie alone cannot authenticate the Studio UI. The Gateway must
 //   ALSO accept `Authorization: Bearer <session_id>` and return `session_id`
-//   in the /launch JSON (Gateway change "phase4-session-header", pending
-//   Yasin's go-ahead after the execution-risk check on the pilot repo).
+//   in the /launch JSON (Gateway change "phase4-session-header" — approved
+//   17:08, deployed ~17:35 on 24 Nov 2026, merge eedc259; the cold test at
+//   20:00 proved cell execution with the Bearer header).
 //   This client sends BOTH: the header when a session id is known, plus
 //   credentials:'include' so the cookie goes too when the browser has it.
-//   With the current (Phase 3) Gateway the /launch JSON has no session_id,
+//   With an old (pre-eedc259) Gateway the /launch JSON has no session_id,
 //   so authed calls 401 — the UI surfaces that honestly instead of faking it.
 //
 // The session id lives ONLY in module memory. It is never written to

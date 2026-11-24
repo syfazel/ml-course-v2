@@ -28,7 +28,11 @@ function versionPlugin() {
       mkdirSync(outDir, { recursive: true })
       writeFileSync(
         resolve(outDir, 'version.json'),
-        JSON.stringify({ hash: APP_HASH, commit: APP_HASH, builtAt: BUILT_AT }, null, 2)
+        // Phase 0 — extended manifest: wakeVersion is the deployed wake Edge
+        // Function version (manual until phase 1 automates it); gatewayCommit
+        // is "unknown" because the running Gateway reports only a static
+        // version string, not its commit (G4 — fixed in phase 2). Never guess.
+        JSON.stringify({ hash: APP_HASH, commit: APP_HASH, builtAt: BUILT_AT, wakeVersion: 'v5', gatewayCommit: 'unknown' }, null, 2)
       )
     }
   }
