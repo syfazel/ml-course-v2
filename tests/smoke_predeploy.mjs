@@ -169,16 +169,22 @@ try {
   const served = await (await fetch(ORIGIN + '/version.json')).json();
   check('smoke: version.json هش dist را دارد', served.hash === headHash, `served=${served.hash} dist=${headHash}`);
 
-  // بدون نشست: خانه (صفحهٔ ورود) و صفحهٔ ورود
-  for (const [hash, label, marker] of [
-    ['#/', 'خانه بالا می‌آید', 'ورود به دوره'],
-    ['#/login', 'صفحهٔ ورود بالا می‌آید', 'ورود به دوره'],
-  ]) {
-    await send('Page.navigate', { url: ORIGIN + '/' + hash });
-    const mounted = await waitFor(async () => await hasText(marker), 10000);
-    const errs = await pageErrors();
-    check(`smoke: ${label}`, mounted && errs.length === 0, mounted ? errs.join(' | ') : 'نشانگر دیده نشد');
-  }
+  // بدون نشست: خانه (صفحهٔ ورود) و صفحهٔ ورود.
+  // اول localStorage را تمیز کن — پروفایل مشترک کروم بین اجراها می‌ماند و
+  // نشست ساختگیِ اجرای قبلی (`#/status`) وگرنه در `#/` خانهٔ واردشده را
+  // نشان می‌دهد و چکِ «ورود به دوره» بی‌دلیل رد می‌شود (رد ۵/۶ در dry-run
+  // رفع F2: فقط `#/` رد شد، `#/login` با همان نشانگر سبز بود).
+  await send('Page.navigate', { url: ORIGIN + '/#/' });
+  await sleep(1500);
+  await evalJs(`localStorage.clear()`);
+  await send('Page.reload', { ignoreCache: true });
+  let mounted = await waitFor(async () => await hasText('ورود به دوره'), 10000);
+  let errs = await pageErrors();
+  check('smoke: خانه بالا می‌آید', mounted && errs.length === 0, mounted ? errs.join(' | ') : 'نشانگر دیده نشد');
+  await send('Page.navigate', { url: ORIGIN + '/#/login' });
+  mounted = await waitFor(async () => await hasText('ورود به دوره'), 10000);
+  errs = await pageErrors();
+  check('smoke: صفحهٔ ورود بالا می‌آید', mounted && errs.length === 0, mounted ? errs.join(' | ') : 'نشانگر دیده نشد');
 
   // با نشست ساختگی: صفحهٔ وضعیت واقعی (نه صفحهٔ ورود)
   await send('Page.navigate', { url: ORIGIN + '/#/status' });
