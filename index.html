@@ -78,7 +78,13 @@
     </style>
   </head>
   <body class="warm-mesh min-h-screen antialiased">
-    <div id="app"></div>
+    <div id="app">
+      <!-- حالت بارگذاری ۴۸px (تصمیم‌های واگذارشده، مورد ۴): نشان M تا پیش از
+           mount شدن Svelte دیده می‌شود؛ main.js هنگام بوت آن را برمی‌دارد. -->
+      <div id="boot-mark" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#faf7f2">
+        <img src="logo/logo-favicon-48.png" width="48" height="48" alt="نشان دورهٔ یادگیری ماشین" />
+      </div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

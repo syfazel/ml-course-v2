@@ -39,7 +39,8 @@
   // فاز ۴ → F8: مبدأ واقعی ورود — App مسیری را که کاربر از آن به استودیو
   // آمده (درس، خانه، داشبورد استاد، ...) در returnTo می‌فرستد؛ «بازگشت به
   // درس» به همان‌جا برمی‌گردد. فقط وقتی مبدأ ثبت نشده (ورود مستقیم با
-  // #/studio)، به درسِ همان لب برمی‌گردد؛ و فقط وقتی لبی هم نیست، به خانه.
+  // #/studio)، به خانهٔ دوره برمی‌گردد (تصمیم‌های واگذارشده، مورد ۵) —
+  // نه به درسِ لب.
   let { labCode = null, returnTo = null } = $props()
 
   // ---------- resolve the lesson + its datasets ----------
@@ -64,11 +65,7 @@
   function isValidReturnHash(h) {
     return typeof h === 'string' && h.startsWith('#/') && !h.startsWith('#/studio')
   }
-  const returnHash = isValidReturnHash(returnTo)
-    ? returnTo
-    : lesson
-      ? `#/lesson/${lesson.id}`
-      : '#/'
+  const returnHash = isValidReturnHash(returnTo) ? returnTo : '#/'
 
   // ---------- state ----------
   let phase = $state('waking') // waking | launching | opening | ready | error

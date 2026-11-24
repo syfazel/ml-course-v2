@@ -26,6 +26,7 @@
   import StudioView from './components/StudioView.svelte'
   import StatusView from './components/StatusView.svelte'
   import IntroTestView from './components/IntroTestView.svelte'
+  import CommandPalette from './components/CommandPalette.svelte'
 
   let simpleMode = $state(false)
   let day0Progress = $state(null)
@@ -253,4 +254,7 @@
       {/if}
     </main>
   </div>
+  <!-- پالت فرمان Ctrl+K (تصمیم‌های واگذارشده، مورد ۴) — فقط در چیدمانِ
+       واردشده؛ در صفحهٔ ورود و داخل استودیو mount نمی‌شود. -->
+  <CommandPalette />
 {/if}
