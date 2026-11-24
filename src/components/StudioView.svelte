@@ -24,6 +24,15 @@
     StudioGatewayError
   } from '../lib/studio-gateway.js'
   import StudioOpening from './StudioOpening.svelte'
+  import { setBusy, clearBusy } from '../lib/version-check.js'
+
+  // Phase R0 — wake state machine: sleeping -> waking -> launching ->
+  // ready | error. The wake call itself polls with the server's
+  // retry_after_seconds (see wakeStudio); this layer adds a hard overall
+  // timeout (3 minutes), an elapsed-seconds counter, a per-state Persian
+  // message, and a cancel path. A flow token guards against a stale flow
+  // (retry / cancel) resolving late and clobbering the current phase.
+  const WAKE_TIMEOUT_MS = 180000
 
   let { labCode = null } = $props()
 
@@ -50,6 +59,9 @@
 
   // ---------- state ----------
   let phase = $state('waking') // waking | launching | opening | ready | error
+  let wakeState = $state('sleeping') // sleeping | waking | launching | ready | error
+  let wakeAttempt = $state(0)
+  let wakeElapsedSec = $state(0)
   let wakeNote = $state('')
   let errorMsg = $state('')
   let errorDetail = $state('')
@@ -68,6 +80,8 @@
   let gateway = null
   let statusTimer = null
   let countdownTimer = null
+  let wakeTimer = null
+  let flowSeq = 0
   let savedApplied = false
 
   // ---------- cells (LabView's buildCells pattern, incl. dataset cells) ----------
@@ -300,28 +314,59 @@
   }
 
   async function startFlow() {
+    const mySeq = ++flowSeq
     phase = 'waking'
+    wakeState = 'sleeping'
+    wakeAttempt = 0
+    wakeElapsedSec = 0
     statusLight = 'waking'
     statusLightLabel = 'در حال بیدار شدن'
     errorMsg = ''
     errorDetail = ''
     wakeNote = ''
+    let timeoutId = null
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new StudioGatewayError(
+              'timeout',
+              'بیداری استودیو بیش از ۳ دقیقه طول کشید؛ دوباره تلاش کنید.'
+            )
+          ),
+        WAKE_TIMEOUT_MS
+      )
+    })
     try {
-      const { ticket, gatewayUrl } = await wakeStudio(sb, {
-        onProgress: (p) => {
-          wakeNote = `تلاش ${p.attempt} — بیداری Codespace… (${p.waitSec} ثانیه صبر)`
-        }
-      })
+      const { ticket, gatewayUrl } = await Promise.race([
+        wakeStudio(sb, {
+          onProgress: (p) => {
+            if (mySeq !== flowSeq) return
+            wakeState = 'waking'
+            wakeAttempt = p.attempt
+            wakeNote = `تلاش ${p.attempt} — بیداری Codespace… (${p.waitSec} ثانیه صبر)`
+          }
+        }),
+        timeoutPromise
+      ])
+      clearTimeout(timeoutId)
+      if (mySeq !== flowSeq) return
       phase = 'launching'
+      wakeState = 'launching'
       wakeNote = ''
       await launchStudioSession(gatewayUrl, ticket)
+      if (mySeq !== flowSeq) return
       gateway = studioGateway(gatewayUrl)
       void loadSaved()
       void refreshStatus()
       statusTimer = setInterval(() => void refreshStatus(), 30000)
+      wakeState = 'ready'
       phase = 'opening'
     } catch (e) {
+      clearTimeout(timeoutId)
+      if (mySeq !== flowSeq) return
       phase = 'error'
+      wakeState = 'error'
       errorMsg =
         e instanceof StudioGatewayError
           ? e.message
@@ -330,6 +375,15 @@
       statusLight = 'error'
       statusLightLabel = 'خطا'
     }
+  }
+
+  // لغو بیداری: جریان در حال اجرا را باطل می‌کند و بدون ذخیره برمی‌گردد
+  // (ذخیره در این مرحله می‌تواند دفترچهٔ ذخیره‌شده را با سلول‌های خالی
+  // بازنویسی کند، پس عمداً انجام نمی‌شود).
+  function cancelWake() {
+    flowSeq += 1
+    clearStudioSession()
+    window.location.hash = returnHash
   }
 
   function onOpeningDone() {
@@ -468,6 +522,9 @@
     countdownTimer = setInterval(() => {
       if (idleLeftSec != null && idleLeftSec > 0) idleLeftSec -= 1
     }, 1000)
+    wakeTimer = setInterval(() => {
+      if (phase === 'waking' || phase === 'launching') wakeElapsedSec += 1
+    }, 1000)
     const onKey = (e) => {
       if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey) && phase === 'ready') {
         e.preventDefault()
@@ -482,10 +539,27 @@
   onDestroy(() => {
     if (statusTimer) clearInterval(statusTimer)
     if (countdownTimer) clearInterval(countdownTimer)
+    if (wakeTimer) clearInterval(wakeTimer)
+    clearBusy('studio-wake')
+    clearBusy('studio-opening')
+    clearBusy('studio-cell')
     clearStudioSession()
     if (phase === 'ready' && labCodeResolved) {
       void handleSave()
     }
+  })
+
+  // Phase R0 — version-check safety: never auto-reload while the wake is
+  // in progress, the opening is playing, or a cell is running.
+  $effect(() => {
+    if (phase === 'waking' || phase === 'launching') setBusy('studio-wake')
+    else clearBusy('studio-wake')
+    if (phase === 'opening') setBusy('studio-opening')
+    else clearBusy('studio-opening')
+  })
+  $effect(() => {
+    if (running) setBusy('studio-cell')
+    else clearBusy('studio-cell')
   })
 </script>
 
@@ -496,10 +570,15 @@
     <img src="logo/jarvis-studio-shield-64.png" alt="Jarvis Studio" width="64" height="64" />
     <h1 class="text-xl font-extrabold">Jarvis Studio</h1>
     <p class="text-sm text-[var(--ink-soft)]">
-      {phase === 'waking' ? 'در حال بیدار کردن استودیو…' : 'در حال برقراری نشست…'}
+      {wakeState === 'sleeping'
+        ? 'استودیو در خواب است — در حال بیدار کردن…'
+        : wakeState === 'waking'
+          ? `در حال بیدار کردن استودیو… (تلاش ${wakeAttempt} — ${wakeElapsedSec} ثانیه گذشته)`
+          : 'در حال برقراری نشست…'}
     </p>
     {#if wakeNote}<p class="text-xs text-[var(--ink-soft)]">{wakeNote}</p>{/if}
-    <p class="text-xs text-[var(--ink-soft)]">بیداری Codespace حدود ۲۰ تا ۲۵ ثانیه طول می‌کشد.</p>
+    <p class="text-xs text-[var(--ink-soft)]">بیداری Codespace معمولاً ۲۰ تا ۲۵ ثانیه طول می‌کشد؛ اگر بیش از ۳ دقیقه شد، خودکار متوقف می‌شود.</p>
+    <button type="button" class="btn-ml-ghost text-sm" onclick={cancelWake}>لغو و بازگشت به درس</button>
   </div>
 {:else if phase === 'error'}
   <div class="min-h-dvh warm-mesh flex flex-col items-center justify-center gap-4 p-6 text-center">

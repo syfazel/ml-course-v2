@@ -3,6 +3,7 @@
   import { auth } from './lib/auth-store.svelte.js'
   import { initAuth } from './lib/auth.js'
   import { router } from './lib/router.svelte.js'
+  import { startVersionWatch } from './lib/version-check.js'
   import {
     fetchDayProgress,
     fetchQuizAttempts,
@@ -23,6 +24,7 @@
   import TeacherDashboardView from './components/TeacherDashboardView.svelte'
   import VideoView from './components/VideoView.svelte'
   import StudioView from './components/StudioView.svelte'
+  import IntroTestView from './components/IntroTestView.svelte'
 
   let simpleMode = $state(false)
   let day0Progress = $state(null)
@@ -132,6 +134,7 @@
 
   onMount(() => {
     const stopRouter = router.init()
+    const stopVersionWatch = startVersionWatch()
     let stopAuth = () => {}
     initAuth().then((unsub) => {
       stopAuth = unsub
@@ -148,6 +151,7 @@
     window.addEventListener('keydown', onStudioKey)
     return () => {
       stopRouter()
+      stopVersionWatch()
       stopAuth()
       window.removeEventListener('keydown', onStudioKey)
     }
@@ -165,7 +169,10 @@
   })
 </script>
 
-{#if !auth.initialized}
+{#if router.path === '/intro-test'}
+  <!-- Phase R0 — isolated opening preview: no login, no token, no wake -->
+  <IntroTestView />
+{:else if !auth.initialized}
   <div class="min-h-screen flex items-center justify-center p-4">
     <div class="glass-card px-6 py-4 text-sm font-medium">
       در حال بررسی نشست کاربری...
