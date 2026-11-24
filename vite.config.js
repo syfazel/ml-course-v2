@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
-import { execSync } from 'node:child_process'
+import { execSync, execFileSync } from 'node:child_process'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -82,6 +82,26 @@ function buildHash() {
 
 const BUILT_AT = new Date().toISOString()
 
+function pilotGatewayCommit() {
+  // فاز ۴ (D5): کامیت گیت‌وی در مانیفست — HEAD شاخهٔ main ریپوی پایلوتِ
+  // کنار همین ریپو در زمان بیلد (نه HEAD شاخهٔ جاری: روی برنچِ فاز،
+  // HEAD کدِ مرج‌نشده است و ثبت آن دروغ می‌شود — R-12). اگر ریپوی
+  // پایلوت نیست یا main ندارد، صادقانه 'unknown' می‌ماند (هرگز حدس
+  // زده نمی‌شود)؛ نسخهٔ واقعاً در حال اجرا را /status گیت‌وی (G4)
+  // گزارش می‌کند و صفحهٔ وضعیت آن را نشان می‌دهد.
+  // توجه: این کامیتِ کدِ مرج‌شده است؛ با ری‌استارت بعدی Codespace
+  // فعال می‌شود، نه با همین دیپلوی فرانت‌اند.
+  try {
+    const root = resolve(process.cwd(), '..', 'jarvis-studio-pilot')
+    const head = execFileSync('git', ['-C', root, 'rev-parse', '--short', 'main'], {
+      encoding: 'utf8'
+    }).trim()
+    return /^[0-9a-f]+$/.test(head) ? head : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 function versionPlugin(appHash) {
   return {
     name: 'app-version',
@@ -90,11 +110,11 @@ function versionPlugin(appHash) {
       mkdirSync(outDir, { recursive: true })
       writeFileSync(
         resolve(outDir, 'version.json'),
-        // Phase 0 — extended manifest: wakeVersion is the deployed wake Edge
-        // Function version (manual until phase 1 automates it); gatewayCommit
-        // is "unknown" because the running Gateway reports only a static
-        // version string, not its commit (G4 — fixed in phase 2). Never guess.
-        JSON.stringify({ hash: appHash, commit: appHash, builtAt: BUILT_AT, wakeVersion: 'v5', gatewayCommit: 'unknown' }, null, 2)
+        // Phase 0 + Phase 4 — extended manifest: wakeVersion is the
+        // deployed wake Edge Function version (manual); gatewayCommit is
+        // the pilot repo HEAD at build time ('unknown' if the pilot repo
+        // is not beside this repo — never guessed).
+        JSON.stringify({ hash: appHash, commit: appHash, builtAt: BUILT_AT, wakeVersion: 'v5', gatewayCommit: pilotGatewayCommit() }, null, 2)
       )
     }
   }

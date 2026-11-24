@@ -47,13 +47,15 @@ export function loginErrorMessage(err) {
   if (isRateLimitError(err)) {
     return {
       text: 'تعداد تلاش‌های ورود بیش از حد مجاز بوده است. چند دقیقه صبر کنید و دوباره تلاش کنید.',
-      kind: 'rate-limited'
+      kind: 'rate-limited',
+      code: 'AUTH_RATE_LIMITED'
     }
   }
   if (isNetworkError(err)) {
     return {
       text: 'ارتباط با سرور احراز هویت برقرار نشد. اتصال اینترنت را بررسی کنید.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_NETWORK'
     }
   }
   const msg = String((err && err.message) || err || '').toLowerCase()
@@ -64,30 +66,35 @@ export function loginErrorMessage(err) {
   ) {
     return {
       text: 'ایمیل یا رمز عبور نادرست است.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_INVALID_CREDENTIALS'
     }
   }
   if (msg.includes('user not found')) {
     return {
       text: 'حساب کاربری با این ایمیل پیدا نشد.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_USER_NOT_FOUND'
     }
   }
   if (msg.includes('email not confirmed')) {
     return {
       text: 'حساب کاربری هنوز تأیید نشده است. لطفاً با استاد هماهنگ کنید.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_EMAIL_NOT_CONFIRMED'
     }
   }
   if (isSessionExpiredError(err)) {
     return {
       text: 'نشست کاربری شما منقضی شده است. لطفاً دوباره وارد شوید.',
-      kind: 'expired'
+      kind: 'expired',
+      code: 'AUTH_SESSION_EXPIRED'
     }
   }
   return {
     text: 'ورود ناموفق بود. لطفاً دوباره تلاش کنید.',
-    kind: 'error'
+    kind: 'error',
+    code: 'AUTH_FAILED'
   }
 }
 
@@ -95,38 +102,53 @@ export function authErrorMessage(where, err) {
   if (isRateLimitError(err)) {
     return {
       text: 'به سقف مجاز درخواست‌ها رسیدید. کمی صبر کنید و دوباره تلاش کنید.',
-      kind: 'rate-limited'
+      kind: 'rate-limited',
+      code: 'AUTH_RATE_LIMITED'
     }
   }
   if (isSessionExpiredError(err)) {
     return {
       text: 'نشست کاربری شما منقضی شده است. لطفاً دوباره وارد شوید.',
-      kind: 'expired'
+      kind: 'expired',
+      code: 'AUTH_SESSION_EXPIRED'
     }
   }
   if (isNetworkError(err)) {
     return {
       text: 'ارتباط با سرور برقرار نشد. اتصال اینترنت را بررسی کنید.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_NETWORK'
     }
   }
   const msg = String((err && err.message) || err || '').toLowerCase()
   if (msg.includes('invalid login credentials')) {
     return {
       text: 'رمز عبور فعلی نادرست است.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_INVALID_CREDENTIALS'
     }
   }
   if (msg.includes('same password') || msg.includes('different from the old')) {
     return {
       text: 'رمز عبور تازه باید با رمز فعلی متفاوت باشد.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_VALIDATION'
     }
   }
   return {
     text: `${where} ناموفق بود. لطفاً دوباره تلاش کنید.`,
-    kind: 'error'
+    kind: 'error',
+    code: 'AUTH_FAILED'
   }
+}
+
+// فاز ۴ (R-1): کد پایدار برای بنر خطای عضویت — memberErrorKind در
+// auth-store فقط 'transient' | 'expired' | 'not-found' است.
+export function memberErrorCode(kind) {
+  if (kind === 'transient') return 'MEMBER_READ_TRANSIENT'
+  if (kind === 'expired') return 'AUTH_SESSION_EXPIRED'
+  if (kind === 'not-found') return 'MEMBER_NOT_FOUND'
+  return 'AUTH_FAILED'
 }
 
 export const MEMBER_NOT_FOUND_MESSAGE =

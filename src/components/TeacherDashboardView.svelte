@@ -3,6 +3,7 @@
   import { auth } from '../lib/auth-store.svelte.js'
   import { fetchTeacherDashboardData, fetchAllLabNotebooks } from '../lib/course-api.js'
   import { computeGates } from '../lib/gates.js'
+  import { unitDisplayName } from '../lib/unit-names.js'
 
   let loading = $state(true)
   let error = $state(null)
@@ -156,7 +157,7 @@
             <table class="table table-sm text-xs">
               <thead>
                 <tr>
-                  <th>کد واحد</th>
+                  <th>واحد</th>
                   <th>وضعیت</th>
                   <th>مراحل تکمیل‌شده</th>
                   <th>آخرین تغییر</th>
@@ -165,7 +166,8 @@
               <tbody>
                 {#each dashboard.progress as row}
                   <tr>
-                    <td dir="ltr" class="font-bold">{row.unit_code}</td>
+                    <!-- فاز ۴ (F12): نام نمایشی واحد به‌جای کد خام. -->
+                    <td>{unitDisplayName(row.unit_code)}</td>
                     <td>{row.status}</td>
                     <td>{Array.isArray(row.completed_steps) ? row.completed_steps.join('، ') || '—' : '—'}</td>
                     <td dir="ltr">{new Date(row.updated_at).toLocaleString('fa-IR')}</td>
@@ -263,7 +265,8 @@
                 <li class="rounded-lg bg-[var(--bg-warm)] p-2.5 border border-[var(--line)]">
                   <div class="flex justify-between font-bold">
                     <span dir="ltr">{ev.event_type}</span>
-                    <span dir="ltr" class="text-[var(--ink-soft)]">{ev.unit_code || '—'}</span>
+                    <!-- فاز ۴ (F12): نام نمایشی واحد به‌جای کد خام. -->
+                    <span class="text-[var(--ink-soft)]">{unitDisplayName(ev.unit_code)}</span>
                   </div>
                   <div class="text-[11px] text-[var(--ink-soft)] mt-1" dir="ltr">
                     {new Date(ev.created_at).toLocaleString('fa-IR')}

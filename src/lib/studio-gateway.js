@@ -22,12 +22,43 @@
 // localStorage / sessionStorage / a cookie / a file.
 
 export class StudioGatewayError extends Error {
-  constructor(kind, message, detail = null) {
+  constructor(kind, message, detail = null, code = null, step = null) {
     super(message)
     this.name = 'StudioGatewayError'
     this.kind = kind // 'wake' | 'launch' | 'unauthorized' | 'network' | 'gateway' | 'timeout'
     this.detail = detail
+    // فاز ۴ (R-1): کد پایدار خطا + قدمِ افتاده — از بدنهٔ ساخت‌یافتهٔ
+    // گیت‌وی (error_code/step) وقتی سرور آن را بدهد؛ وگرنه null و کارت
+    // خطا فقط kind را نشان می‌دهد.
+    this.code = code
+    this.step = step
   }
+}
+
+/** Parse a Gateway error body (فاز ۴، R-1). The Gateway returns
+ *  {"detail": {"error_code", "step", "message"}} on its own failures;
+ *  FastAPI validation failures come as {"detail": [...]}. Returns
+ *  {code, step, message} or null when the body carries no structure. */
+function parseGatewayErrorBody(text) {
+  if (!text) return null
+  let body = null
+  try {
+    body = JSON.parse(text)
+  } catch {
+    return null
+  }
+  const d = body && body.detail
+  if (d && typeof d === 'object' && !Array.isArray(d) && typeof d.error_code === 'string') {
+    return {
+      code: d.error_code,
+      step: typeof d.step === 'string' ? d.step : null,
+      message: typeof d.message === 'string' ? d.message : null
+    }
+  }
+  if (Array.isArray(d) && d.length) {
+    return { code: 'VALIDATION_ERROR', step: 'request', message: null }
+  }
+  return null
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -156,12 +187,16 @@ export async function launchStudioSession(gatewayUrl, ticket) {
     throw new StudioGatewayError('network', 'ارتباط با Gateway برقرار نشد.', String(e?.message || e))
   }
   if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    const parsed = parseGatewayErrorBody(text)
     throw new StudioGatewayError(
       'launch',
       res.status === 401
         ? 'بلیط ورود منقضی شده است؛ دوباره تلاش کنید.'
         : 'برقراری نشست استودیو ناموفق بود.',
-      `launch HTTP ${res.status}`
+      `launch HTTP ${res.status}${parsed ? ` [${parsed.code}${parsed.step ? ` @ ${parsed.step}` : ''}]` : ''}${parsed?.message ? ` — ${parsed.message}` : text && !parsed ? ` — ${text.slice(0, 200)}` : ''}`,
+      parsed?.code || null,
+      parsed?.step || null
     )
   }
   const data = await res.json().catch(() => ({}))
@@ -222,18 +257,25 @@ async function gatewayFetch(path, { method = 'GET', body = null, timeoutMs = 150
     clearTimeout(timer)
   }
   if (res.status === 401) {
+    const text = await res.text().catch(() => '')
+    const parsed = parseGatewayErrorBody(text)
     throw new StudioGatewayError(
       'unauthorized',
       'نشست استودیو معتبر نیست. اگر این خطا تکرار شد، استودیو را ببندید و دوباره باز کنید.',
-      `${method} ${path} -> 401`
+      `${method} ${path} -> 401 [${parsed?.code || 'SESSION_MISSING'} @ ${parsed?.step || 'session'}]`,
+      parsed?.code || 'SESSION_MISSING',
+      parsed?.step || 'session'
     )
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
+    const parsed = parseGatewayErrorBody(text)
     throw new StudioGatewayError(
       'gateway',
       `Gateway خطا داد (HTTP ${res.status}).`,
-      `${method} ${path} -> ${res.status} ${text.slice(0, 200)}`
+      `${method} ${path} -> ${res.status}${parsed ? ` [${parsed.code}${parsed.step ? ` @ ${parsed.step}` : ''}]` : ''}${parsed?.message ? ` — ${parsed.message}` : text && !parsed ? ` ${text.slice(0, 200)}` : ''}`,
+      parsed?.code || null,
+      parsed?.step || null
     )
   }
   return res.json().catch(() => ({}))

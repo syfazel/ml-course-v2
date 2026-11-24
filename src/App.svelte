@@ -24,6 +24,7 @@
   import TeacherDashboardView from './components/TeacherDashboardView.svelte'
   import VideoView from './components/VideoView.svelte'
   import StudioView from './components/StudioView.svelte'
+  import StatusView from './components/StatusView.svelte'
   import IntroTestView from './components/IntroTestView.svelte'
 
   let simpleMode = $state(false)
@@ -120,11 +121,22 @@
 
   // Jarvis Studio — Ctrl/Cmd+J دوطرفه (toggle) با e.code (روی کیبورد فارسی
   // e.key برای J می‌شود «ت» ولی e.code می‌ماند KeyJ)؛ فالبک Ctrl/Cmd+\.
-  let lastNonStudioHash = $state('#/')
+  // فاز ۴ → F8: مبدأ واقعی ورود به استودیو — آخرین هشِ غیر-استودیو از
+  // هر مسیری (درس، خانه، داشبورد، Ctrl+J، دکمهٔ سایدبار) اینجا نگه داشته
+  // می‌شود تا «بازگشت به درس» به همان‌جا برگردد؛ null یعنی هنوز مبدأی
+  // ثبت نشده (ورود مستقیم با #/studio) و StudioView به درسِ لب برمی‌گردد.
+  let lastNonStudioHash = $state(null)
+  $effect(() => {
+    if (router.path !== '/studio') {
+      lastNonStudioHash = window.location.hash || '#/'
+    }
+  })
   function toggleStudio() {
     if (!auth.canOperate) return
     if (router.path === '/studio') {
-      router.go(lastNonStudioHash.startsWith('#') ? lastNonStudioHash : '#/')
+      router.go(
+        lastNonStudioHash && lastNonStudioHash.startsWith('#') ? lastNonStudioHash : '#/'
+      )
     } else {
       lastNonStudioHash = window.location.hash || '#/'
       const lab = currentUnitId !== null ? `?lab=lab-${currentUnitId}` : ''
@@ -182,7 +194,7 @@
   <LoginView />
 {:else if router.path === '/studio'}
   {#key router.params.lab || 'default'}
-    <StudioView labCode={router.params.lab || null} />
+    <StudioView labCode={router.params.lab || null} returnTo={lastNonStudioHash} />
   {/key}
 {:else}
   <div class="min-h-screen p-4 max-w-7xl mx-auto flex flex-col lg:flex-row gap-5">
@@ -229,6 +241,8 @@
         <CapstoneView />
       {:else if router.path === '/teacher'}
         <TeacherDashboardView />
+      {:else if router.path === '/status'}
+        <StatusView />
       {:else}
         <HomeView
           {day0Progress}

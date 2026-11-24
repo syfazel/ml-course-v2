@@ -9,6 +9,7 @@
     clearStaleSession,
     signOut
   } from '../lib/auth.js'
+  import { memberErrorCode } from '../lib/auth-errors.js'
   import { router } from '../lib/router.svelte.js'
   import { APP_VERSION } from '../lib/version-check.js'
   // شبکهٔ Three.js را لِیزی لود می‌کنیم تا باندل اصلی سبک بماند؛
@@ -20,7 +21,7 @@
   let nextPassword = $state('')
   let confirmPassword = $state('')
   let busy = $state(false)
-  let feedback = $state(null) // { text, kind }
+  let feedback = $state(null) // { text, kind, code }
   let videoEl = $state(null)
 
   // تیزر «رشتهٔ طلایی یادگیری» — تشخیص در لحظهٔ ساخت کامپوننت (نه onMount)
@@ -52,7 +53,7 @@
     try {
       const res = await signIn(email, password)
       if (!res.ok) {
-        feedback = { text: res.text, kind: res.kind, retryMember: res.retryMember || false }
+        feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false }
         return
       }
       password = ''
@@ -73,7 +74,7 @@
         router.go('#/')
         return
       }
-      feedback = { text: res.text, kind: res.kind, retryMember: res.retryMember || false }
+      feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false }
     } finally {
       busy = false
     }
@@ -86,7 +87,7 @@
     busy = true
     try {
       const res = await clearStaleSession()
-      feedback = { text: res.text, kind: res.kind, retryMember: false }
+      feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: false }
     } finally {
       busy = false
     }
@@ -98,7 +99,7 @@
     busy = true
     try {
       const res = await requestPasswordReset(email)
-      feedback = { text: res.text, kind: res.kind }
+      feedback = { text: res.text, kind: res.kind, code: res.code || null }
     } finally {
       busy = false
     }
@@ -110,7 +111,7 @@
     busy = true
     try {
       const res = await completePasswordReset(nextPassword, confirmPassword)
-      feedback = { text: res.text, kind: res.kind }
+      feedback = { text: res.text, kind: res.kind, code: res.code || null }
       if (res.ok) {
         nextPassword = ''
         confirmPassword = ''
@@ -213,6 +214,10 @@
       {#if auth.memberError}
         <div class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 space-y-3">
           <p>{auth.memberError}</p>
+          <!-- فاز ۴ (R-1): کد پایدار خطا کنار متن بنر. -->
+          {#if auth.memberErrorKind}
+            <p class="font-code text-[11px] opacity-80" dir="ltr">کد خطا: {memberErrorCode(auth.memberErrorKind)}</p>
+          {/if}
           {#if auth.memberErrorKind === 'transient'}
             <!-- فاز ۳ (F6): خطای گذرا — دوباره خواندن عضویت، بدون خروج. -->
             <button type="button" class="btn-ml-primary text-xs w-full" onclick={handleRetryMember} disabled={busy}>
@@ -239,6 +244,10 @@
           class:text-red-900={feedback.kind === 'error'}
         >
           <p>{feedback.text}</p>
+          <!-- فاز ۴ (R-1): کد پایدار خطا کنار متن بازخورد. -->
+          {#if feedback.code}
+            <p class="font-code mt-1 text-[11px] opacity-80" dir="ltr">کد خطا: {feedback.code}</p>
+          {/if}
           {#if feedback.retryMember}
             <!-- فاز ۳ (F6): وارد شده‌ای، فقط خواندن عضویت نشد — تلاش دوباره. -->
             <button type="button" class="btn-ml-primary text-xs w-full mt-3" onclick={handleRetryMember} disabled={busy}>

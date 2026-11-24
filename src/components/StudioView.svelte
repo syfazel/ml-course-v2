@@ -36,7 +36,11 @@
   // case of the loop short.
   const WAKE_TIMEOUT_MS = WAKE_DEADLINE_MS + 10000
 
-  let { labCode = null } = $props()
+  // فاز ۴ → F8: مبدأ واقعی ورود — App مسیری را که کاربر از آن به استودیو
+  // آمده (درس، خانه، داشبورد استاد، ...) در returnTo می‌فرستد؛ «بازگشت به
+  // درس» به همان‌جا برمی‌گردد. فقط وقتی مبدأ ثبت نشده (ورود مستقیم با
+  // #/studio)، به درسِ همان لب برمی‌گردد؛ و فقط وقتی لبی هم نیست، به خانه.
+  let { labCode = null, returnTo = null } = $props()
 
   // ---------- resolve the lesson + its datasets ----------
   const lessonIds = Object.keys(COURSE_CONTENT.lessons || {}).sort(
@@ -57,7 +61,14 @@
   const lesson = resolveLesson(labCode)
   const labCodeResolved = lesson ? `lab-${lesson.id}` : null
   const datasets = lesson ? COURSE_CONTENT.labDatasets[String(lesson.id)] || [] : []
-  const returnHash = lesson ? `#/lesson/${lesson.id}` : '#/'
+  function isValidReturnHash(h) {
+    return typeof h === 'string' && h.startsWith('#/') && !h.startsWith('#/studio')
+  }
+  const returnHash = isValidReturnHash(returnTo)
+    ? returnTo
+    : lesson
+      ? `#/lesson/${lesson.id}`
+      : '#/'
 
   // ---------- state ----------
   let phase = $state('waking') // waking | launching | opening | ready | error
@@ -67,13 +78,15 @@
   let wakeNote = $state('')
   let errorMsg = $state('')
   let errorDetail = $state('')
+  // فاز ۴ (R-1): کد پایدار خطا + قدمِ افتاده، برای کارت خطا.
+  let errorCode = $state(null)
+  let errorStep = $state(null)
   let cells = $state([])
   let activeCell = $state(0)
   let running = $state(false)
   let statusLight = $state('waking') // idle | waking | running | ok | error
   let statusLightLabel = $state('در حال بیدار شدن')
   let gatewayStatus = $state(null)
-  let idleLeftSec = $state(null)
   let saveState = $state(null) // null | 'saving' | 'saved' | 'error'
   let saveNote = $state('')
   let sessionLost = $state(false) // فاز ۲ → F9: نشست گیت‌وی وسط درس از دست رفت
@@ -105,7 +118,6 @@
   }
   let gateway = null
   let statusTimer = null
-  let countdownTimer = null
   let wakeTimer = null
   let flowSeq = 0
   let savedApplied = false
@@ -289,6 +301,17 @@
   function fmtNum(v) {
     return String(Number(v.toPrecision(6)))
   }
+  // فاز ۴ (R-1): متن خطای سلول با کد + قدم — وقتی سرور کد ساخت‌یافته
+  // داده باشد، در همان جعبهٔ خطا دیده می‌شود، نه فقط در کارت خطا.
+  function gatewayErrorText(e) {
+    const base =
+      e instanceof StudioGatewayError ? e.message : 'اجرای سلول ناموفق بود.'
+    if (e instanceof StudioGatewayError && (e.code || e.step)) {
+      return `${base} (کد: ${e.code || e.kind}${e.step ? ` · قدم: ${e.step}` : ''})`
+    }
+    return base
+  }
+
   async function syncSliderToCell() {
     if (!gateway || running || phase !== 'ready' || !sliderFit) return
     running = true
@@ -331,15 +354,7 @@
       }
       void refreshStatus()
     } catch (e) {
-      sliderServer = {
-        state: 'error',
-        r2: null,
-        stdout: '',
-        error:
-          e instanceof StudioGatewayError
-            ? e.message
-            : 'اجرای سلول ناموفق بود.'
-      }
+      sliderServer = { state: 'error', r2: null, stdout: '', error: gatewayErrorText(e) }
       statusLight = 'error'
       statusLightLabel = 'خطا'
       if (e instanceof StudioGatewayError) errorDetail = e.detail || ''
@@ -388,18 +403,14 @@
     }
   }
 
+  // فاز ۴ (F7): دیگر شمارش معکوس خاموشی از idle_deadline_utc خوانده
+  // نمی‌شود — آن مهلت با هر پول /status تازه می‌شد و هیچ‌وقت کم نمی‌شد،
+  // و مهلت واقعیِ Codespace به بی‌فعالیتیِ ترمینال بستگی دارد، نه HTTP.
+  // refreshStatus فقط وضعیت + تشخیص نشست مرده را انجام می‌دهد.
   async function refreshStatus() {
     if (!gateway) return
     try {
       gatewayStatus = await gateway.status()
-      if (gatewayStatus?.idle_deadline_utc) {
-        idleLeftSec = Math.max(
-          0,
-          Math.floor(
-            (new Date(gatewayStatus.idle_deadline_utc).getTime() - Date.now()) / 1000
-          )
-        )
-      }
     } catch (e) {
       /* مهلت بیکاری یخ می‌زند؛ خطای واقعی هنگام اجراست — ولی ۴۰۱ یعنی
          نشست مرده است و بنر «بیداری دوباره» را نشان می‌دهیم (فاز ۲ → F9). */
@@ -417,6 +428,8 @@
     statusLightLabel = 'در حال بیدار شدن'
     errorMsg = ''
     errorDetail = ''
+    errorCode = null
+    errorStep = null
     wakeNote = ''
     sessionLost = false
     let timeoutId = null
@@ -467,6 +480,10 @@
           ? e.message
           : 'ورود به استودیو ناموفق بود.'
       errorDetail = e?.detail || e?.message || ''
+      // فاز ۴ (R-1): کد خطا + قدم — کدِ ساخت‌یافتهٔ سرور، وگرنه kind.
+      errorCode =
+        e instanceof StudioGatewayError ? e.code || e.kind || null : null
+      errorStep = e instanceof StudioGatewayError ? e.step || null : null
       statusLight = 'error'
       statusLightLabel = 'خطا'
     }
@@ -533,13 +550,7 @@
       await handleSave()
       void refreshStatus()
     } catch (e) {
-      cell.output = {
-        stdout: '',
-        error:
-          e instanceof StudioGatewayError
-            ? e.message
-            : 'اجرای سلول ناموفق بود.'
-      }
+      cell.output = { stdout: '', error: gatewayErrorText(e) }
       statusLight = 'error'
       statusLightLabel = 'خطا'
       if (e instanceof StudioGatewayError) errorDetail = e.detail || ''
@@ -609,13 +620,6 @@
     window.location.hash = returnHash
   }
 
-  function formatCountdown(sec) {
-    if (sec == null) return '—'
-    const m = Math.floor(sec / 60)
-    const s = sec % 60
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  }
-
   onMount(() => {
     if (!lesson || !auth.canOperate) {
       phase = 'error'
@@ -626,9 +630,6 @@
       statusLightLabel = 'خطا'
       return
     }
-    countdownTimer = setInterval(() => {
-      if (idleLeftSec != null && idleLeftSec > 0) idleLeftSec -= 1
-    }, 1000)
     wakeTimer = setInterval(() => {
       if (phase === 'waking' || phase === 'launching') wakeElapsedSec += 1
     }, 1000)
@@ -645,7 +646,6 @@
 
   onDestroy(() => {
     if (statusTimer) clearInterval(statusTimer)
-    if (countdownTimer) clearInterval(countdownTimer)
     if (wakeTimer) clearInterval(wakeTimer)
     clearBusy('studio-wake')
     clearBusy('studio-opening')
@@ -707,9 +707,15 @@
       {#if errorDetail}
         <p class="font-code mt-2 text-[11px] leading-5 text-[var(--ink-soft)]" dir="ltr">{errorDetail}</p>
       {/if}
-      <!-- فاز ۱ (R-8): هش باندل روی کارت خطا — وقتی خطایی گزارش می‌شود،
-           معلوم باشد روی کدام باندل است. -->
-      <p class="mt-3 text-[11px] text-[var(--ink-soft)]">نسخهٔ باندل: <span class="font-code" dir="ltr">{APP_VERSION}</span></p>
+      <!-- فاز ۱ (R-8) + فاز ۴ (R-1): قدم + دلیل + نسخه روی کارت خطا —
+           کدِ خطا و قدمِ افتاده (وقتی معلوم‌اند) کنار هش باندل. -->
+      {#if errorCode}
+        <p class="mt-3 text-[11px] text-[var(--ink-soft)]">
+          کد خطا: <span class="font-code" dir="ltr">{errorCode}</span>{#if errorStep}
+            · قدم: <span class="font-code" dir="ltr">{errorStep}</span>{/if}
+        </p>
+      {/if}
+      <p class="mt-1 text-[11px] text-[var(--ink-soft)]">نسخهٔ باندل: <span class="font-code" dir="ltr">{APP_VERSION}</span></p>
     </div>
     <div class="flex gap-2">
       <button type="button" class="btn-ml-primary" onclick={() => void startFlow()}>تلاش دوباره</button>
@@ -732,7 +738,6 @@
           <span class="status-light" data-state={statusLight} title="وضعیت Gateway">
             <span class="status-dot"></span>
             <span class="text-xs font-bold">{statusLightLabel}</span>
-            <span class="text-xs text-[var(--ink-soft)]">خاموشی خودکار تا {formatCountdown(idleLeftSec)}</span>
           </span>
           <button type="button" class="btn-ml-ghost !min-h-[36px] text-sm" onclick={closeStudio}>
             بازگشت به درس
@@ -1026,8 +1031,12 @@
           {/if}
         </div>
 
+        <!-- فاز ۴ (F7): هشدار صادقانه به‌جای شمارش دروغین — مهلت واقعی
+             به بی‌فعالیتیِ ترمینال بستگی دارد و کار در این صفحه (اجرا،
+             ذخیره، پول وضعیت) آن را عقب نمی‌اندازد. -->
         <p class="text-[11px] leading-5 text-[var(--ink-soft)]">
-          بستن استودیو کرنل را خاموش نمی‌کند؛ Codespace پس از ۳۰ دقیقه بیکاری خودکار خاموش می‌شود.
+          بستن استودیو کرنل را خاموش نمی‌کند؛ Codespace پس از ۳۰ دقیقه بی‌فعالیتیِ ترمینال
+          خودکار خاموش می‌شود — فعالیت در این صفحه آن را بیدار نگه نمی‌دارد.
           توقف صریح از اینجا ممکن نیست.
         </p>
       </section>

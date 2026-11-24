@@ -117,7 +117,7 @@ export async function fetchMember(user) {
 // ولی خواندن عضویت نشد». در صورت موفقیت، فراخواننده به خانه می‌رود.
 export async function retryMemberRead() {
   if (!sb || !auth.user) {
-    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
   }
   auth.loading = true
   try {
@@ -126,12 +126,12 @@ export async function retryMemberRead() {
       return { ok: true, text: 'اطلاعات عضویت خوانده شد.', kind: 'ok', member }
     }
     if (auth.memberErrorKind === 'expired') {
-      return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+      return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
     }
     if (auth.memberErrorKind === 'transient') {
-      return { ok: false, text: MEMBER_READ_FAILED_MESSAGE, kind: 'member-unread', retryMember: true }
+      return { ok: false, text: MEMBER_READ_FAILED_MESSAGE, kind: 'member-unread', retryMember: true, code: 'MEMBER_READ_TRANSIENT' }
     }
-    return { ok: false, text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE, kind: 'error' }
+    return { ok: false, text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE, kind: 'error', code: 'MEMBER_NOT_FOUND' }
   } finally {
     auth.loading = false
   }
@@ -261,13 +261,14 @@ export async function signIn(email, password) {
     return {
       ok: false,
       text: 'پیکربندی سرور احراز هویت در این بیلد موجود نیست.',
-      kind: 'error'
+      kind: 'error',
+      code: 'AUTH_NO_CONFIG'
     }
   }
 
   const emailErr = validateEmail(email)
-  if (emailErr) return { ok: false, text: emailErr, kind: 'error' }
-  if (!password) return { ok: false, text: 'لطفاً رمز عبور را وارد کنید.', kind: 'error' }
+  if (emailErr) return { ok: false, text: emailErr, kind: 'error', code: 'AUTH_VALIDATION' }
+  if (!password) return { ok: false, text: 'لطفاً رمز عبور را وارد کنید.', kind: 'error', code: 'AUTH_VALIDATION' }
 
   const cleanEmail = email.trim().toLowerCase()
   auth.loading = true
@@ -295,16 +296,18 @@ export async function signIn(email, password) {
           ok: false,
           kind: 'member-unread',
           retryMember: true,
+          code: 'MEMBER_READ_TRANSIENT',
           text: MEMBER_READ_FAILED_MESSAGE
         }
       }
       if (auth.memberErrorKind === 'expired') {
-        return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+        return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
       }
       return {
         ok: false,
         text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE,
-        kind: 'error'
+        kind: 'error',
+        code: 'MEMBER_NOT_FOUND'
       }
     }
 
@@ -316,10 +319,10 @@ export async function signIn(email, password) {
 
 export async function requestPasswordReset(email) {
   if (!sb) {
-    return { ok: false, text: 'پیکربندی سرور موجود نیست.', kind: 'error' }
+    return { ok: false, text: 'پیکربندی سرور موجود نیست.', kind: 'error', code: 'AUTH_NO_CONFIG' }
   }
   const emailErr = validateEmail(email)
-  if (emailErr) return { ok: false, text: emailErr, kind: 'error' }
+  if (emailErr) return { ok: false, text: emailErr, kind: 'error', code: 'AUTH_VALIDATION' }
 
   const cleanEmail = email.trim().toLowerCase()
   const redirectTo =
@@ -341,10 +344,10 @@ export async function requestPasswordReset(email) {
 
 export async function completePasswordReset(nextPassword, confirmPassword) {
   if (!sb) {
-    return { ok: false, text: 'پیکربندی سرور موجود نیست.', kind: 'error' }
+    return { ok: false, text: 'پیکربندی سرور موجود نیست.', kind: 'error', code: 'AUTH_NO_CONFIG' }
   }
   const bad = validateNewPassword(nextPassword, confirmPassword)
-  if (bad) return { ok: false, text: bad, kind: 'error' }
+  if (bad) return { ok: false, text: bad, kind: 'error', code: 'AUTH_VALIDATION' }
 
   const { error } = await sb.auth.updateUser({ password: nextPassword })
   if (error) return { ok: false, ...authErrorMessage('ثبت رمز تازه', error) }
@@ -362,10 +365,10 @@ export async function completePasswordReset(nextPassword, confirmPassword) {
 
 export async function changePassword(currentPassword, nextPassword, confirmPassword) {
   if (!sb || !auth.user?.email) {
-    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
   }
   const bad = validateChangePassword(currentPassword, nextPassword, confirmPassword)
-  if (bad) return { ok: false, text: bad, kind: 'error' }
+  if (bad) return { ok: false, text: bad, kind: 'error', code: 'AUTH_VALIDATION' }
 
   const { error: verifyErr } = await sb.auth.signInWithPassword({
     email: auth.user.email,

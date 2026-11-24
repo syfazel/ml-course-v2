@@ -327,6 +327,14 @@
 
     <button
       type="button"
+      class="btn-ml-ghost w-full text-xs flex items-center justify-between"
+      onclick={() => router.go('#/status')}
+    >
+      <span>وضعیت نسخه‌ها (فرانت‌اند، بیداری، گیت‌وی)</span>
+    </button>
+
+    <button
+      type="button"
       class="btn-ml-ghost w-full text-xs text-red-700 border-red-200 hover:bg-red-50"
       onclick={() => signOut()}
     >
