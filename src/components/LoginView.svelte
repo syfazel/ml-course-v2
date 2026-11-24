@@ -125,6 +125,12 @@
     class="relative z-10 min-h-screen flex flex-col items-center justify-center gap-5 p-4 py-8"
   >
     <header class="teaser-hero text-center space-y-1">
+      <img
+        src="logo/logo-mark-inverse.svg"
+        alt=""
+        aria-hidden="true"
+        class="mx-auto block w-14 sm:w-16 h-auto mb-2"
+      />
       <h1 class="teaser-h1">دورهٔ یادگیری ماشین</h1>
       <p class="teaser-tagline">از دادهٔ پراکنده تا شبکه‌ای که یاد می‌گیرد</p>
     </header>
@@ -132,9 +138,11 @@
     <div class="glass-card w-full max-w-md p-6 sm:p-8 space-y-6">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="four-dots" aria-hidden="true">
-            <span></span><span></span><span></span><span></span>
-          </div>
+          <img
+            src="logo/logo-mark-color.svg"
+            alt="نشان دورهٔ یادگیری ماشین"
+            class="w-7 h-auto shrink-0"
+          />
           <div>
             <p class="text-base font-extrabold tracking-tight">ورود بسته</p>
             <p class="text-xs text-[var(--ink-soft)]">ویژه استاد و شاگرد</p>

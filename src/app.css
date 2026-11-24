@@ -195,21 +195,6 @@ html.simple-mode .glass-card {
 }
 
 /* لوگوی چهار نقطه — رنگ‌های هویت (تراکوتا، پاتینه، برنج، زعفرانی) */
-.four-dots {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-}
-.four-dots span {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-}
-.four-dots span:nth-child(1) { background: #b8421f; }
-.four-dots span:nth-child(2) { background: #166b5e; }
-.four-dots span:nth-child(3) { background: #c08a3e; }
-.four-dots span:nth-child(4) { background: #b5720a; }
-
 /* جشن آرام ۶۰۰ms — رشتهٔ نور طلایی روی کارت (فاز ۲)؛ با reduced-motion حذف می‌شود */
 @keyframes gold-sweep {
   from { transform: translateX(100%); }

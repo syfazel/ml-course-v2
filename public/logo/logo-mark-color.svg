@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 6 198 150" role="img" aria-label="نشان دورهٔ یادگیری ماشین">
+  <!--
+    نشان اصلی «قوسِ یادگیری / M پنهان» — بازطراحی تختِ کانسپت C (نسخهٔ v2.1، سنجش sanjesh-logo-gemini-v2.md)
+    هندسه (شبکهٔ ۲۲۰×۱۶۰، واحد = ۱):
+    - ستون M: P0(30,134) → P1(68,50) → P2(110,108) → P3(152,28) → P4(190,134)
+      نسبت کلی نشان ≈ ۱٫۳۲:۱
+    - بدنه: سه پارهٔ تخت با رنگ‌های توکنی (بدون گرادیان) — ضخامت 28.6 (v2: از ۲۶ به ۲۸٫۶، +۱۰٪ برای ریل در ۲۸/۳۶px)؛
+      سبز پاتینه #166B5E (پای چپ) / تراکوتا #B8421F (دره + صعود دوم) / زعفرانی #B5720A (پای راست)
+    - درز قله (v2): دایره‌های اتصال به رنگ پارهٔ ورودی‌اند (P1 سبز، P3 تراکوتا) — مرز رنگ دقیقاً روی قله است.
+    - دندان داخلی (v2.1): دو پارهٔ butt-cap در سمت داخلی قله هم‌پوشانی داشتند و پارهٔ بعدی روی قبلی
+      دندان می‌زد (در رندر ۴۸۰px زیر قلهٔ چپ دیده شد). پارهٔ تراکوتا به سمت خودش از خط نیمساز قلهٔ P1
+      و چندضلعی زعفرانی به سمت خودش از خط نیمساز قلهٔ P3 بریده شده‌اند (clipPath) — مرز رنگ دقیقاً نیمساز است.
+    - پای راست (v2): مخروطی 28.6 ← 25.5 (۱۱٪ باریک‌تر) — چندضلعی پرشده + دایرهٔ پایانی r12.75.
+    - خط داخلی: همان مسیر M تا قلهٔ راست (P0→P3)؛ کانال ۱۱ واحدیِ شفاف (ماسک) + خط جوهر #1E1916 به ضخامت ۶.
+    - سه گره روی خط داخلی: N1 سبز در شروع، N2 تراکوتا در دره، N3 زعفرانی در قله؛ شعاع ۱۴ + حلقهٔ شفاف ۵ واحدی.
+    - ماسک: کانال و حلقه‌ها شفاف‌اند (پس‌زمینه از آن‌ها دیده می‌شود) — نشان روی هر پس‌زمینه‌ای درست می‌نشیند.
+  -->
+  <defs>
+    <clipPath id="c-t1" clipPathUnits="userSpaceOnUse"><polygon points="168.78,1044.91 -32.78,-944.91 962.12,-1045.69 1163.69,944.12"/></clipPath>
+    <clipPath id="c-s3" clipPathUnits="userSpaceOnUse"><polygon points="82.44,1025.58 221.56,-969.58 1219.14,-900.02 1080.02,1095.14"/></clipPath>
+    <mask id="m-cut" maskUnits="userSpaceOnUse" x="8" y="6" width="198" height="150">
+      <path d="M30 134 L68 50" stroke="#fff" stroke-width="28.6" fill="none" stroke-linecap="butt"/>
+      <circle cx="68" cy="50" r="14.3" fill="#fff"/>
+      <path d="M68 50 L110 108 L152 28" stroke="#fff" stroke-width="28.6" fill="none" stroke-linecap="butt" stroke-linejoin="round"/>
+      <circle cx="152" cy="28" r="14.3" fill="#fff"/>
+      <path d="M165.46 23.17 L202 129.7 L178 138.3 L138.54 32.83 Z" fill="#fff"/>
+      <circle cx="190" cy="134" r="12.75" fill="#fff"/>
+      <path d="M30 134 L68 50 L110 108 L152 28" stroke="#000" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M30 134 L68 50 L110 108 L152 28" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="30" cy="134" r="16.5" fill="none" stroke="#000" stroke-width="5"/>
+      <circle cx="30" cy="134" r="14" fill="#fff"/>
+      <circle cx="110" cy="108" r="16.5" fill="none" stroke="#000" stroke-width="5"/>
+      <circle cx="110" cy="108" r="14" fill="#fff"/>
+      <circle cx="152" cy="28" r="16.5" fill="none" stroke="#000" stroke-width="5"/>
+      <circle cx="152" cy="28" r="14" fill="#fff"/>
+    </mask>
+  </defs>
+  <g mask="url(#m-cut)">
+    <path d="M30 134 L68 50" stroke="#166B5E" stroke-width="28.6" fill="none" stroke-linecap="butt"/>
+    <circle cx="68" cy="50" r="14.3" fill="#166B5E"/>
+    <path d="M68 50 L110 108 L152 28" stroke="#B8421F" stroke-width="28.6" fill="none" stroke-linecap="butt" stroke-linejoin="round" clip-path="url(#c-t1)"/>
+    <circle cx="152" cy="28" r="14.3" fill="#B8421F"/>
+    <path d="M165.46 23.17 L202 129.7 L178 138.3 L138.54 32.83 Z" fill="#B5720A" clip-path="url(#c-s3)"/>
+    <circle cx="190" cy="134" r="12.75" fill="#B5720A"/>
+    <path d="M30 134 L68 50 L110 108 L152 28" stroke="#1E1916" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="30" cy="134" r="14" fill="#166B5E"/>
+    <circle cx="110" cy="108" r="14" fill="#B8421F"/>
+    <circle cx="152" cy="28" r="14" fill="#B5720A"/>
+  </g>
+</svg>

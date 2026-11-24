@@ -45,10 +45,12 @@
   <div class="space-y-5">
     <!-- سرستون برند -->
     <div class="flex items-center justify-between pb-3 border-b border-[var(--line)]">
-      <div class="flex items-center gap-2.5">
-        <div class="four-dots" aria-hidden="true">
-          <span></span><span></span><span></span><span></span>
-        </div>
+      <div class="flex items-center gap-2.5 lg:gap-3">
+        <img
+          src="logo/logo-mark-color.svg"
+          alt="نشان دورهٔ یادگیری ماشین"
+          class="w-8 lg:w-9 h-auto shrink-0"
+        />
         <div>
           <p class="font-extrabold text-sm">یادگیری ماشین</p>
           <p class="text-[11px] text-[var(--ink-soft)]">

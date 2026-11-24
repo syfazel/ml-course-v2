@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 6 198 150" role="img" aria-label="فاوآیکون دورهٔ یادگیری ماشین">
+  <!--
+    فاوآیکون — نسخهٔ ساده‌شدهٔ نشان اصلی، برای ۱۶px (نسخهٔ v2.1)
+    تفاوت‌ها با نشان اصلی (عمدی، برای خوانایی در کوچک):
+    - بدنه ضخیم‌تر: ۳۴ به‌جای ۲۸٫۶ (در ۱۶px ≈ ۲٫۷px)
+    - خط داخلی و کانال حذف شدند — در ۱۶px خط ۶ واحدی ≈ ۰٫۵px می‌شد
+    - گره‌ها بزرگ‌تر: شعاع ۱۶ + حلقهٔ شفاف، تا سه مهرهٔ رنگی روی M خوانا بمانند
+    - درز قله (v2): دایره‌های اتصال به رنگ پارهٔ ورودی‌اند (P1 سبز، P3 تراکوتا)
+    - دندان داخلی (v2.1): پارهٔ تراکوتا و پای زعفرانی به سمت خودشان از خط نیمساز قله‌ها بریده شده‌اند
+    - دره (v2): P2 شش واحد بالاتر (110,102) — زاویهٔ دره ~۵ درجه بازتر شد تا درهٔ تراکوتا
+      در آنتی‌الیاسینگ ۱۶px به پای زعفرانی نچسبد
+    - پای راست مخروطی نشده — هر سه پا توپرند، پس وزن نامتقارن ندارد
+    - همان ستون M و همان سه پارهٔ تخت (سبز / تراکوتا / زعفرانی)
+  -->
+  <defs>
+    <clipPath id="c-t1" clipPathUnits="userSpaceOnUse"><polygon points="194.95,1041.91 -58.95,-941.91 932.96,-1068.86 1186.86,914.96"/></clipPath>
+    <clipPath id="c-s3" clipPathUnits="userSpaceOnUse"><polygon points="66.1,1024.3 237.9,-968.3 1234.2,-882.4 1062.4,1110.2"/></clipPath>
+    <mask id="m-fav" maskUnits="userSpaceOnUse" x="8" y="6" width="198" height="150">
+            <path d="M30 134 L68 50" stroke="#fff" stroke-width="34" fill="none" stroke-linecap="butt"/>
+      <circle cx="68" cy="50" r="17" fill="#fff"/>
+      <path d="M68 50 L110 102 L152 28" stroke="#fff" stroke-width="34" fill="none" stroke-linecap="butt" stroke-linejoin="round"/>
+      <circle cx="152" cy="28" r="17" fill="#fff"/>
+      <path d="M152 28 L190 134" stroke="#fff" stroke-width="34" fill="none" stroke-linecap="butt"/>
+      <circle cx="190" cy="134" r="17" fill="#fff"/>
+      <circle cx="30" cy="134" r="18.5" fill="none" stroke="#000" stroke-width="5"/>
+      <circle cx="30" cy="134" r="16" fill="#fff"/>
+      <circle cx="110" cy="102" r="18.5" fill="none" stroke="#000" stroke-width="5"/>
+      <circle cx="110" cy="102" r="16" fill="#fff"/>
+      <circle cx="152" cy="28" r="18.5" fill="none" stroke="#000" stroke-width="5"/>
+      <circle cx="152" cy="28" r="16" fill="#fff"/>
+    </mask>
+  </defs>
+  <g mask="url(#m-fav)">
+        <path d="M30 134 L68 50" stroke="#166B5E" stroke-width="34" fill="none" stroke-linecap="butt"/>
+    <circle cx="68" cy="50" r="17" fill="#166B5E"/>
+    <path d="M68 50 L110 102 L152 28" stroke="#B8421F" stroke-width="34" fill="none" stroke-linecap="butt" stroke-linejoin="round" clip-path="url(#c-t1)"/>
+    <circle cx="152" cy="28" r="17" fill="#B8421F"/>
+    <path d="M152 28 L190 134" stroke="#B5720A" stroke-width="34" fill="none" stroke-linecap="butt" clip-path="url(#c-s3)"/>
+    <circle cx="190" cy="134" r="17" fill="#B5720A"/>
+    <circle cx="30" cy="134" r="16" fill="#166B5E"/>
+    <circle cx="110" cy="102" r="16" fill="#B8421F"/>
+    <circle cx="152" cy="28" r="16" fill="#B5720A"/>
+  </g>
+</svg>
