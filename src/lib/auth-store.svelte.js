@@ -10,6 +10,9 @@ class AuthStore {
   user = $state(null)
   member = $state(null)
   memberError = $state(null)
+  // فاز ۳ (F6): جنسِ آخرین خطای خواندن عضویت — 'transient' | 'not-found' | 'expired' | null.
+  // فقط 'transient' دکمهٔ «تلاش دوباره» دارد؛ بقیه قطعی‌اند.
+  memberErrorKind = $state(null)
   recoveryMode = $state(false)
   sessionExpired = $state(false)
   sessionNotice = $state(null)
@@ -36,6 +39,7 @@ class AuthStore {
     this.user = null
     this.member = null
     this.memberError = null
+    this.memberErrorKind = null
     this.recoveryMode = false
     this.sessionExpired = expired
     this.sessionNotice = notice

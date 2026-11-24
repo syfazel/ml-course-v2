@@ -13,6 +13,10 @@ export const isSupabaseConfigured = Boolean(
   supabaseUrl && supabasePublishableKey
 )
 
+// تنها کلید ذخیرهٔ نشست supabase-js؛ auth.js برای «پاک‌کردن نشست کهنه»
+// به همین نام ارجاع می‌دهد تا دو جای کد از هم جدا نشوند.
+export const SUPABASE_STORAGE_KEY = 'ml-course-v2-auth'
+
 export const sb = isSupabaseConfigured
   ? createClient(supabaseUrl, supabasePublishableKey, {
       auth: {
@@ -20,7 +24,7 @@ export const sb = isSupabaseConfigured
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: 'pkce',
-        storageKey: 'ml-course-v2-auth'
+        storageKey: SUPABASE_STORAGE_KEY
       }
     })
   : null

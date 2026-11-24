@@ -135,6 +135,14 @@ export const MEMBER_NOT_FOUND_MESSAGE =
 export const SESSION_EXPIRED_MESSAGE =
   'نشست کاربری شما منقضی شده است. لطفاً دوباره وارد شوید.'
 
+// فاز ۳ (F6): رمز درست بود و نشست معتبر ذخیره شده، ولی خواندن عضویت
+// از سرور نشد — «ورود ناموفق» نیست؛ وضعیت جداگانه با اقدامِ تلاش دوباره.
+export const MEMBER_READ_FAILED_MESSAGE =
+  'وارد شدید، ولی خواندن اطلاعات عضویت از سرور نشد. «تلاش دوباره» را بزنید.'
+
+export const STALE_SESSION_CLEARED_MESSAGE =
+  'نشست کهنه پاک شد. اکنون با ایمیل و رمز عبور وارد شوید.'
+
 export function validateEmail(email) {
   const clean = (email || '').trim()
   if (!clean) return 'لطفاً ایمیل خود را وارد کنید.'

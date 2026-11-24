@@ -1,12 +1,13 @@
 // لایه Auth فاز ۱ برای سایت یادگیری ماشین (نسخه دوم)
 // ثبت‌نام عمومی بسته است؛ نقش فقط از public.members خوانده می‌شود.
 
-import { sb } from './supabase.js'
+import { sb, SUPABASE_STORAGE_KEY } from './supabase.js'
 import { auth } from './auth-store.svelte.js'
 import {
   stashSession,
   clearStashedSession,
   markDeliberateSignOut,
+  consumeDeliberateSignOut,
   handleAuthEvent,
   recoverStashedSession
 } from './auth-events.js'
@@ -18,7 +19,10 @@ import {
   validateChangePassword,
   isRateLimitError,
   isSessionExpiredError,
+  isNetworkError,
   MEMBER_NOT_FOUND_MESSAGE,
+  MEMBER_READ_FAILED_MESSAGE,
+  STALE_SESSION_CLEARED_MESSAGE,
   SESSION_EXPIRED_MESSAGE
 } from './auth-errors.js'
 
@@ -31,48 +35,131 @@ export {
 }
 
 const VALID_ROLES = new Set(['teacher', 'student'])
-let fetchMemberRunning = false
+// فاز ۳ (F6): خواندن عضویت ۳ تلاش با backoff. گاردِ «در حال اجرا» دیگر
+// null برنمی‌گرداند — فراخواننده‌های هم‌زمان همان وعدهٔ در حال اجرا را
+// می‌گیرند تا یک خواندنِ در جریان، «عضویت پیدا نشد» نشان داده نشود.
+const FETCH_MEMBER_ATTEMPTS = 3
+const FETCH_MEMBER_BACKOFF_MS = [500, 1500]
+let fetchMemberInflight = null
 let authSubscription = null
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+function isRetryableMemberError(error) {
+  if (isSessionExpiredError(error)) return false
+  const status = error?.status || error?.statusCode
+  if (typeof status === 'number' && status >= 400 && status < 500) return false
+  return true
+}
+
+async function fetchMemberAttempt(user) {
+  for (let attempt = 1; attempt <= FETCH_MEMBER_ATTEMPTS; attempt++) {
+    let data = null
+    let error = null
+    try {
+      const res = await sb
+        .from('members')
+        .select('id, auth_id, role, display_name, username, created_at, updated_at')
+        .eq('auth_id', user.id)
+        .maybeSingle()
+      data = res.data
+      error = res.error
+    } catch (e) {
+      error = e
+    }
+
+    if (!error) {
+      if (!data || !VALID_ROLES.has(data.role)) {
+        // قطعی: چنین عضویتی نیست — تلاش دوباره بی‌فایده است.
+        auth.member = null
+        auth.memberError = MEMBER_NOT_FOUND_MESSAGE
+        auth.memberErrorKind = 'not-found'
+        return null
+      }
+      auth.member = data
+      auth.memberError = null
+      auth.memberErrorKind = null
+      return data
+    }
+
+    if (isSessionExpiredError(error)) {
+      auth.resetSession({ expired: true, notice: SESSION_EXPIRED_MESSAGE })
+      auth.memberErrorKind = 'expired'
+      return null
+    }
+
+    if (attempt < FETCH_MEMBER_ATTEMPTS && isRetryableMemberError(error)) {
+      await sleep(FETCH_MEMBER_BACKOFF_MS[attempt - 1] || 1500)
+      continue
+    }
+
+    auth.member = null
+    auth.memberError = 'خطا در خواندن اطلاعات عضویت از سرور. لطفاً دوباره تلاش کنید.'
+    auth.memberErrorKind = 'transient'
+    return null
+  }
+  return null
+}
 
 export async function fetchMember(user) {
   if (!sb || !user) return null
   if (auth.member && auth.member.auth_id === user.id) return auth.member
-  if (fetchMemberRunning) return null
-
-  fetchMemberRunning = true
+  if (fetchMemberInflight) return fetchMemberInflight
+  fetchMemberInflight = fetchMemberAttempt(user)
   try {
-    const { data, error } = await sb
-      .from('members')
-      .select('id, auth_id, role, display_name, username, created_at, updated_at')
-      .eq('auth_id', user.id)
-      .maybeSingle()
-
-    if (error) {
-      if (isSessionExpiredError(error)) {
-        auth.resetSession({ expired: true, notice: SESSION_EXPIRED_MESSAGE })
-        return null
-      }
-      auth.member = null
-      auth.memberError = 'خطا در خواندن اطلاعات عضویت از سرور. لطفاً دوباره تلاش کنید.'
-      return null
-    }
-
-    if (!data || !VALID_ROLES.has(data.role)) {
-      auth.member = null
-      auth.memberError = MEMBER_NOT_FOUND_MESSAGE
-      return null
-    }
-
-    auth.member = data
-    auth.memberError = null
-    return data
-  } catch {
-    auth.member = null
-    auth.memberError = 'ارتباط برای بررسی عضویت برقرار نشد.'
-    return null
+    return await fetchMemberInflight
   } finally {
-    fetchMemberRunning = false
+    fetchMemberInflight = null
   }
+}
+
+// تلاش دوبارهٔ دستیِ خواندن عضویت — از بنر خطا و از بازخورد «وارد شدید
+// ولی خواندن عضویت نشد». در صورت موفقیت، فراخواننده به خانه می‌رود.
+export async function retryMemberRead() {
+  if (!sb || !auth.user) {
+    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+  }
+  auth.loading = true
+  try {
+    const member = await fetchMember(auth.user)
+    if (member) {
+      return { ok: true, text: 'اطلاعات عضویت خوانده شد.', kind: 'ok', member }
+    }
+    if (auth.memberErrorKind === 'expired') {
+      return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+    }
+    if (auth.memberErrorKind === 'transient') {
+      return { ok: false, text: MEMBER_READ_FAILED_MESSAGE, kind: 'member-unread', retryMember: true }
+    }
+    return { ok: false, text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE, kind: 'error' }
+  } finally {
+    auth.loading = false
+  }
+}
+
+// پاک‌کردن نشست کهنه و ورود تازه (فاز ۳، F6): برای وقتی که نشستِ
+// ذخیره‌شده کهنه/خراب است و ورود تازه پشت «نشست منقضی شده» قفل شده.
+// ترتیب مهم است: اول stash پاک می‌شود تا رویداد SIGNED_OUTِ ناشی از
+// signOut با همان stashِ کهنه بازیابی نکند؛ بعد signOut؛ و اگر signOut
+// به‌خاطر شبکه ناموفق بود، کلید ذخیرهٔ خودِ supabase-js هم مستقیم
+// پاک می‌شود تا نشست کهنه دوباره خوانده نشود.
+export async function clearStaleSession() {
+  markDeliberateSignOut(true)
+  clearStashedSession()
+  try {
+    if (sb) await sb.auth.signOut()
+  } catch {
+    consumeDeliberateSignOut()
+  }
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(SUPABASE_STORAGE_KEY)
+    }
+  } catch {
+    // نادیده گرفته می‌شود
+  }
+  auth.resetSession({ expired: false, notice: null })
+  return { ok: true, text: STALE_SESSION_CLEARED_MESSAGE, kind: 'ok' }
 }
 
 export async function initAuth() {
@@ -198,6 +285,22 @@ export async function signIn(email, password) {
 
     const member = await fetchMember(data.user)
     if (!member) {
+      // فاز ۳ (F6): موفقیت رمز و شکستِ خواندن عضویت دو وضعیت جدا هستند.
+      // نشست معتبر ذخیره شده است؛ «ورود ناموفق» دروغ است. فقط وقتی
+      // عضویت واقعاً پیدا نشد (not-found) یا نشست منقضی است، ورود رد
+      // می‌شود؛ در شکستِ گذرا، کاربر وارد شده می‌ماند و «تلاش دوباره»
+      // می‌زند.
+      if (auth.memberErrorKind === 'transient') {
+        return {
+          ok: false,
+          kind: 'member-unread',
+          retryMember: true,
+          text: MEMBER_READ_FAILED_MESSAGE
+        }
+      }
+      if (auth.memberErrorKind === 'expired') {
+        return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired' }
+      }
       return {
         ok: false,
         text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE,

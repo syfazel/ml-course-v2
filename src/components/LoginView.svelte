@@ -5,6 +5,8 @@
     signIn,
     requestPasswordReset,
     completePasswordReset,
+    retryMemberRead,
+    clearStaleSession,
     signOut
   } from '../lib/auth.js'
   import { router } from '../lib/router.svelte.js'
@@ -50,11 +52,41 @@
     try {
       const res = await signIn(email, password)
       if (!res.ok) {
-        feedback = { text: res.text, kind: res.kind }
+        feedback = { text: res.text, kind: res.kind, retryMember: res.retryMember || false }
         return
       }
       password = ''
       router.go('#/')
+    } finally {
+      busy = false
+    }
+  }
+
+  // فاز ۳ (F6): تلاش دوبارهٔ خواندن عضویت — هم از بنر خطا، هم از
+  // بازخورد «وارد شدید ولی خواندن عضویت نشد». در صورت موفقیت، خانه.
+  async function handleRetryMember() {
+    feedback = null
+    busy = true
+    try {
+      const res = await retryMemberRead()
+      if (res.ok) {
+        router.go('#/')
+        return
+      }
+      feedback = { text: res.text, kind: res.kind, retryMember: res.retryMember || false }
+    } finally {
+      busy = false
+    }
+  }
+
+  // فاز ۳ (F6): پاک‌کردن نشست کهنه و ورود تازه — وقتی نشستِ ذخیره‌شده
+  // کهنه/خراب است و ورود تازه پشت «نشست منقضی شده» قفل شده.
+  async function handleClearStale() {
+    feedback = null
+    busy = true
+    try {
+      const res = await clearStaleSession()
+      feedback = { text: res.text, kind: res.kind, retryMember: false }
     } finally {
       busy = false
     }
@@ -166,14 +198,27 @@
       {/if}
 
       {#if auth.sessionNotice}
-        <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          {auth.sessionNotice}
+        <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-3">
+          <p>{auth.sessionNotice}</p>
+          {#if auth.sessionExpired}
+            <!-- فاز ۳ (F6): نشست کهنه را کامل پاک کن و از اول وارد شو —
+                 برای وقتی که نشستِ ذخیره‌شده خراب است و ورود تازه قفل شده. -->
+            <button type="button" class="btn-ml-primary text-xs w-full" onclick={handleClearStale} disabled={busy}>
+              {busy ? 'در حال پاک‌کردن...' : 'پاک‌کردن نشست کهنه و ورود تازه'}
+            </button>
+          {/if}
         </div>
       {/if}
 
       {#if auth.memberError}
         <div class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 space-y-3">
           <p>{auth.memberError}</p>
+          {#if auth.memberErrorKind === 'transient'}
+            <!-- فاز ۳ (F6): خطای گذرا — دوباره خواندن عضویت، بدون خروج. -->
+            <button type="button" class="btn-ml-primary text-xs w-full" onclick={handleRetryMember} disabled={busy}>
+              {busy ? 'در حال تلاش دوباره...' : 'تلاش دوباره'}
+            </button>
+          {/if}
           <button type="button" class="btn-ml-ghost text-xs w-full" onclick={() => signOut()}>
             خروج از حساب فعلی
           </button>
@@ -186,14 +231,20 @@
           class:bg-emerald-50={feedback.kind === 'ok'}
           class:border-emerald-300={feedback.kind === 'ok'}
           class:text-emerald-900={feedback.kind === 'ok'}
-          class:bg-amber-50={feedback.kind === 'rate-limited' || feedback.kind === 'expired'}
-          class:border-amber-300={feedback.kind === 'rate-limited' || feedback.kind === 'expired'}
-          class:text-amber-900={feedback.kind === 'rate-limited' || feedback.kind === 'expired'}
+          class:bg-amber-50={feedback.kind === 'rate-limited' || feedback.kind === 'expired' || feedback.kind === 'member-unread'}
+          class:border-amber-300={feedback.kind === 'rate-limited' || feedback.kind === 'expired' || feedback.kind === 'member-unread'}
+          class:text-amber-900={feedback.kind === 'rate-limited' || feedback.kind === 'expired' || feedback.kind === 'member-unread'}
           class:bg-red-50={feedback.kind === 'error'}
           class:border-red-300={feedback.kind === 'error'}
           class:text-red-900={feedback.kind === 'error'}
         >
-          {feedback.text}
+          <p>{feedback.text}</p>
+          {#if feedback.retryMember}
+            <!-- فاز ۳ (F6): وارد شده‌ای، فقط خواندن عضویت نشد — تلاش دوباره. -->
+            <button type="button" class="btn-ml-primary text-xs w-full mt-3" onclick={handleRetryMember} disabled={busy}>
+              {busy ? 'در حال تلاش دوباره...' : 'تلاش دوباره'}
+            </button>
+          {/if}
         </div>
       {/if}
 

@@ -1,4 +1,11 @@
 // مدیریت رویدادهای نشست (اقتباس‌شده از auth-events.js در sclack_A)
+//
+// نشست — تک‌منبع (فاز ۳، F6):
+// منبع حقیقتِ نشست، ذخیرهٔ خودِ supabase-js است (کلید ml-course-v2-auth)؛
+// stash دستیِ اینجا فقط fallback برای دو مسیر است: رویداد SIGNED_OUT و
+// خالی‌بودن getSession در initAuth. به stashِ منقضی هرگز اعتماد نمی‌شود —
+// readStashedSession ورودیِ منقضی را پاک می‌کند و null برمی‌گرداند — تا
+// چرخهٔ «نشست منقضی شده» از stash کهنه ساخته نشود.
 
 const STASH_KEY = 'ml_v2_stashed_session'
 let deliberateSignOut = false
@@ -17,6 +24,14 @@ function getStorage() {
 
 export function stashSession(session) {
   if (!session || !session.refresh_token || !session.access_token) return
+  // نشستِ همین حالا منقضی را اصلاً stash نکن — وگرنه fallback بعدی
+  // با همان نشست مرده تلاش می‌کند و چرخهٔ «منقضی شده» می‌سازد.
+  if (
+    typeof session.expires_at === 'number' &&
+    session.expires_at * 1000 <= Date.now()
+  ) {
+    return
+  }
   const storage = getStorage()
   if (!storage) return
   try {
@@ -42,8 +57,25 @@ export function readStashedSession() {
     const raw = storage.getItem(STASH_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    if (parsed && parsed.refresh_token) return parsed
-    return null
+    if (!parsed || !parsed.refresh_token) return null
+    // چک انقضا — فقط fallback: ورودیِ منقضی را پاک کن و null بده؛
+    // با نشست مرده هرگز refreshSession صدا زده نمی‌شود.
+    if (
+      typeof parsed.expires_at === 'number' &&
+      parsed.expires_at * 1000 <= Date.now()
+    ) {
+      clearStashedSession()
+      return null
+    }
+    if (
+      !parsed.expires_at &&
+      typeof parsed.stashed_at === 'number' &&
+      Date.now() - parsed.stashed_at > 7 * 24 * 60 * 60 * 1000
+    ) {
+      clearStashedSession()
+      return null
+    }
+    return parsed
   } catch {
     return null
   }
