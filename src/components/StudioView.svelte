@@ -779,6 +779,12 @@
     <button type="button" class="mobile-sheet-fab" onclick={() => (sheetOpen = !sheetOpen)}>
       {sheetOpen ? 'بستن خروجی' : 'خروجی'}
     </button>
+
+    <!-- موبایل: کپسول شناور «درس | استودیو» -->
+    <div class="mobile-view-capsule" role="group" aria-label="جابه‌جایی میان درس و استودیو">
+      <button type="button" class="mobile-view-seg" onclick={closeStudio}>درس</button>
+      <span class="mobile-view-seg" data-active="true" aria-current="page">استودیو</span>
+    </div>
   </div>
 {/if}
 
@@ -889,9 +895,13 @@
   .mobile-sheet-fab {
     display: none;
   }
+  .mobile-view-capsule {
+    display: none;
+  }
   @media (max-width: 768px) {
     .studio-desk main {
       grid-template-columns: 1fr !important;
+      padding-bottom: 130px;
     }
     .obs-col {
       position: fixed;
@@ -928,6 +938,37 @@
       font-weight: 700;
       align-items: center;
       box-shadow: 0 8px 24px rgba(30, 25, 22, 0.2);
+    }
+    /* کپسول شناور «درس | استودیو» — بالای دکمهٔ خروجی تا روی هم نیفتند */
+    .mobile-view-capsule {
+      display: inline-flex;
+      position: fixed;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 51;
+      padding: 4px;
+      border-radius: 999px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-tint-strong);
+      box-shadow: 0 8px 24px rgba(30, 25, 22, 0.2);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      align-items: center;
+    }
+    .mobile-view-seg {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding-inline: 18px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .mobile-view-seg[data-active='true'] {
+      background: var(--terracotta);
+      color: #fff;
     }
   }
 </style>
