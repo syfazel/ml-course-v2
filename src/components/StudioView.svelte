@@ -21,6 +21,7 @@
     launchStudioSession,
     studioGateway,
     clearStudioSession,
+    WAKE_DEADLINE_MS,
     StudioGatewayError
   } from '../lib/studio-gateway.js'
   import StudioOpening from './StudioOpening.svelte'
@@ -28,11 +29,12 @@
 
   // Phase R0 — wake state machine: sleeping -> waking -> launching ->
   // ready | error. The wake call itself polls with the server's
-  // retry_after_seconds (see wakeStudio); this layer adds a hard overall
-  // timeout (3 minutes), an elapsed-seconds counter, a per-state Persian
-  // message, and a cancel path. A flow token guards against a stale flow
-  // (retry / cancel) resolving late and clobbering the current phase.
-  const WAKE_TIMEOUT_MS = 180000
+  // retry_after_seconds (see wakeStudio); this layer races the SAME
+  // deadline the loop uses (R-10, فاز ۲ → F4), plus a 10s grace so the
+  // loop's own timeout error — with the last 202 detail — wins over the
+  // generic race error. Previously a hard 180s race cut the ~241s worst
+  // case of the loop short.
+  const WAKE_TIMEOUT_MS = WAKE_DEADLINE_MS + 10000
 
   let { labCode = null } = $props()
 
@@ -74,6 +76,7 @@
   let idleLeftSec = $state(null)
   let saveState = $state(null) // null | 'saving' | 'saved' | 'error'
   let saveNote = $state('')
+  let sessionLost = $state(false) // فاز ۲ → F9: نشست گیت‌وی وسط درس از دست رفت
   let datasetOpen = $state(-1)
   let sliderDegree = $state(2)
   let sliderServer = $state(null) // null | { state: 'running'|'ok'|'error', r2, stdout, error }
@@ -397,8 +400,10 @@
           )
         )
       }
-    } catch {
-      /* مهلت بیکاری یخ می‌زند؛ خطای واقعی هنگام اجراست */
+    } catch (e) {
+      /* مهلت بیکاری یخ می‌زند؛ خطای واقعی هنگام اجراست — ولی ۴۰۱ یعنی
+         نشست مرده است و بنر «بیداری دوباره» را نشان می‌دهیم (فاز ۲ → F9). */
+      if (e instanceof StudioGatewayError && e.kind === 'unauthorized') sessionLost = true
     }
   }
 
@@ -413,6 +418,7 @@
     errorMsg = ''
     errorDetail = ''
     wakeNote = ''
+    sessionLost = false
     let timeoutId = null
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = setTimeout(
@@ -420,7 +426,7 @@
           reject(
             new StudioGatewayError(
               'timeout',
-              'بیداری استودیو بیش از ۳ دقیقه طول کشید؛ دوباره تلاش کنید.'
+              'بیداری استودیو بیش از ۵ دقیقه طول کشید؛ دوباره تلاش کنید.'
             )
           ),
         WAKE_TIMEOUT_MS
@@ -475,6 +481,16 @@
     window.location.hash = returnHash
   }
 
+  // بیداری دوباره پس از از دست رفتن نشست وسط درس (فاز ۲ → F9):
+  // سلول‌ها و دفترچهٔ باز در حافظهٔ کامپوننت می‌مانند — startFlow آن‌ها را
+  // دست نمی‌زند (loadSaved فقط یک بار و فقط کد/خروجیِ ذخیره‌شده را اعمال
+  // می‌کند) — پس بیداری دوباره دفترچهٔ باز را از دست نمی‌دهد.
+  function rewake() {
+    sessionLost = false
+    clearStudioSession()
+    void startFlow()
+  }
+
   function onOpeningDone() {
     phase = 'ready'
     statusLight = 'idle'
@@ -505,6 +521,7 @@
     statusLightLabel = 'در حال اجرا'
     try {
       const out = await gateway.execute(cell.code, labCodeResolved)
+      sessionLost = false // نشست زنده است — بنر بازیابی (اگر بود) برداشته می‌شود
       cell.output = gatewayOutcomeToOutput(out)
       cell.matched =
         cell.expected && cell.output.stdout
@@ -526,6 +543,7 @@
       statusLight = 'error'
       statusLightLabel = 'خطا'
       if (e instanceof StudioGatewayError) errorDetail = e.detail || ''
+      if (e instanceof StudioGatewayError && e.kind === 'unauthorized') sessionLost = true
     } finally {
       cell.running = false
       running = false
@@ -677,7 +695,7 @@
           : 'در حال برقراری نشست…'}
     </p>
     {#if wakeNote}<p class="text-xs text-[var(--ink-soft)]">{wakeNote}</p>{/if}
-    <p class="text-xs text-[var(--ink-soft)]">بیداری Codespace معمولاً ۲۰ تا ۲۵ ثانیه طول می‌کشد؛ اگر بیش از ۳ دقیقه شد، خودکار متوقف می‌شود.</p>
+    <p class="text-xs text-[var(--ink-soft)]">بیداری Codespace معمولاً ۲۰ تا ۲۵ ثانیه طول می‌کشد؛ اگر بیش از ۵ دقیقه شد، خودکار متوقف می‌شود.</p>
     <button type="button" class="btn-ml-ghost text-sm" onclick={cancelWake}>لغو و بازگشت به درس</button>
   </div>
 {:else if phase === 'error'}
@@ -731,6 +749,17 @@
           نشست فقط با کوکی برقرار شد؛ چون مرورگر کوکی Lax را در fetch نمی‌فرستد، اجرای سلول ممکن است ۴۰۱ بدهد.
           پشتیبانی از هدر Authorization در Gateway تأیید و دیپلوی شده (۲۴ نوامبر) — این پیام یعنی Gateway در حال اجرا هنوز نسخهٔ قدیمی است؛ با بیداری دوباره نسخهٔ تازه می‌آید.
         </p>
+      </div>
+    {/if}
+
+    {#if sessionLost}
+      <!-- فاز ۲ → F9: نشست وسط درس از دست رفت — بیداری دوباره بدون بستن
+           استودیو و بدون از دست دادن دفترچهٔ باز. -->
+      <div class="mx-auto mt-3 w-full max-w-[1400px] px-4">
+        <div class="flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2" style="border-color: rgba(181,114,10,.4); background: rgba(181,114,10,.08);">
+          <p class="text-xs leading-6 font-bold" style="color: var(--saffron-text)">نشست استودیو از دست رفت — دفترچهٔ باز حفظ شده است.</p>
+          <button type="button" class="btn-ml-primary !min-h-[44px] text-sm" onclick={rewake}>بیداری دوباره</button>
+        </div>
       </div>
     {/if}
 

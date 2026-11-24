@@ -32,6 +32,14 @@ export class StudioGatewayError extends Error {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/** Single wake budget (R-10, فاز ۲ → F4): the 202 loop AND the UI timeout
+ *  share this one deadline. Worst case of the v5 loop: first call ~43s
+ *  (35s state poll + 8s probe) + 11 x ~18s (8s probe + 10s sleep) = ~241s.
+ *  300s leaves margin; StudioView races against this same value (plus a
+ *  small grace so the loop's own timeout error — with the last 202 detail
+ *  — wins over the generic race error). */
+export const WAKE_DEADLINE_MS = 300_000
+
 let _sessionId = null
 let _gatewayUrl = null
 
@@ -71,12 +79,23 @@ async function wakeErrorDetail(error, status) {
   return `wake HTTP ${status || '?'}${fnPart ? ` — ${fnPart}` : ` — ${base}`}`
 }
 
-export async function wakeStudio(sb, { onProgress = () => {}, maxAttempts = 12 } = {}) {
+export async function wakeStudio(
+  sb,
+  { onProgress = () => {}, maxAttempts = 12, deadlineMs = WAKE_DEADLINE_MS } = {}
+) {
   if (!sb) {
     throw new StudioGatewayError('wake', 'پیکربندی سرور در این بیلد موجود نیست.')
   }
+  const deadline = Date.now() + deadlineMs
+  const pastDeadline = () =>
+    new StudioGatewayError(
+      'wake',
+      'استودیو در زمان مقرر بیدار نشد؛ دوباره تلاش کنید.',
+      JSON.stringify(lastStarting || null)
+    )
   let lastStarting = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (Date.now() >= deadline) throw pastDeadline()
     let data = null
     let error = null
     try {
@@ -107,7 +126,11 @@ export async function wakeStudio(sb, { onProgress = () => {}, maxAttempts = 12 }
       lastStarting = data
       const waitSec = Number(data.retry_after_seconds ?? 10)
       onProgress({ phase: 'waking', attempt, waitSec, gatewayUrl: data.gateway_url || null })
-      await sleep(waitSec * 1000)
+      // Sleep only up to the deadline: the loop head then throws the
+      // timeout error instead of starting another 202 round past it.
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) continue
+      await sleep(Math.min(waitSec * 1000, remainingMs))
       continue
     }
     throw new StudioGatewayError(
@@ -116,11 +139,7 @@ export async function wakeStudio(sb, { onProgress = () => {}, maxAttempts = 12 }
       JSON.stringify(data || null)
     )
   }
-  throw new StudioGatewayError(
-    'wake',
-    'استودیو در زمان مقرر بیدار نشد؛ دوباره تلاش کنید.',
-    JSON.stringify(lastStarting || null)
-  )
+  throw pastDeadline()
 }
 
 /** Exchange a one-time ticket for a session at GET /launch.
@@ -157,26 +176,48 @@ function gatewayHeaders(extra = {}) {
   return headers
 }
 
+/** Retries for idempotent GETs on transport errors only (R-11, فاز ۲ → F5):
+ *  the forwarded-port tunnel intermittently drops responses (HTTP 0 in the
+ *  pilot); a dropped GET is safe to retry, a POST /execute or /notebooks
+ *  is not (re-running a cell / re-saving). An HTTP status — even a 5xx —
+ *  is a real answer and is never retried; only a thrown fetch (no response
+ *  at all) retries. Attempts are logged so a flaky tunnel stays visible. */
+const GET_RETRY_DELAYS_MS = [500, 1000]
+
 async function gatewayFetch(path, { method = 'GET', body = null, timeoutMs = 150000 } = {}) {
   if (!_gatewayUrl) {
     throw new StudioGatewayError('gateway', 'Gateway متصل نیست.')
   }
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  const maxRetries = method === 'GET' ? GET_RETRY_DELAYS_MS.length : 0
   let res
   try {
-    res = await fetch(`${_gatewayUrl}${path}`, {
-      method,
-      credentials: 'include',
-      headers: gatewayHeaders(body ? { 'Content-Type': 'application/json' } : {}),
-      body: body ? JSON.stringify(body) : null,
-      signal: ctrl.signal
-    })
-  } catch (e) {
-    if (e?.name === 'AbortError') {
-      throw new StudioGatewayError('timeout', 'پاسخ Gateway دیر رسید (مهلت ۱۵۰ ثانیه).')
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetch(`${_gatewayUrl}${path}`, {
+          method,
+          credentials: 'include',
+          headers: gatewayHeaders(body ? { 'Content-Type': 'application/json' } : {}),
+          body: body ? JSON.stringify(body) : null,
+          signal: ctrl.signal
+        })
+        break
+      } catch (e) {
+        if (e?.name === 'AbortError') {
+          throw new StudioGatewayError('timeout', 'پاسخ Gateway دیر رسید (مهلت ۱۵۰ ثانیه).')
+        }
+        if (attempt < maxRetries) {
+          console.warn(
+            `[studio-gateway] GET ${path} transport error, retry ${attempt + 1}/${maxRetries}:`,
+            e?.message || e
+          )
+          await sleep(GET_RETRY_DELAYS_MS[attempt])
+          continue
+        }
+        throw new StudioGatewayError('network', 'ارتباط با Gateway قطع شد.', String(e?.message || e))
+      }
     }
-    throw new StudioGatewayError('network', 'ارتباط با Gateway قطع شد.', String(e?.message || e))
   } finally {
     clearTimeout(timer)
   }
