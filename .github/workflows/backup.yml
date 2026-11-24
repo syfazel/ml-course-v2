@@ -30,16 +30,26 @@ jobs:
             echo "SUPABASE_DB_PASSWORD is not set — see the header of this workflow file." >&2
             exit 1
           fi
+          # Session pooler (5432): pg_dump needs one session for the whole
+          # run; the transaction pooler (6543) breaks its COPY protocol
+          # (hang / protocol error). Same host, session mode only.
           mkdir -p backup
           docker run --rm \
             -e PGPASSWORD="$PGPASSWORD" \
             -v "$PWD/backup:/backup" \
             postgres:16 \
             pg_dump \
-              -h aws-0-eu-central-1.pooler.supabase.com -p 6543 \
+              -h aws-0-eu-central-1.pooler.supabase.com -p 5432 \
               -U postgres.awznimzcsmpaadvqwodg -d postgres \
               -F c -f /backup/ml-course-v2-$(date +%Y%m%d).dump
           ls -la backup/
+      - name: Verify dump is a valid custom-format archive
+        run: |
+          docker run --rm \
+            -v "$PWD/backup:/backup" \
+            postgres:16 \
+            pg_restore -l /backup/*.dump > /dev/null
+          echo "dump archive header OK"
       - name: Upload dump as artifact (30 days)
         uses: actions/upload-artifact@v4
         with:
