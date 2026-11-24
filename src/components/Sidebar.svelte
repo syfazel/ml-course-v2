@@ -41,6 +41,28 @@
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
       ? '⌘J'
       : 'Ctrl+J'
+
+  // کارت شیشه‌ای یک‌بارمصرف روز اول (سنجش، کشف‌پذیری) — زیر دکمهٔ ورود به استودیو.
+  // فقط یک پرچم راهنما در localStorage؛ هیچ نشست/توکنی اینجا ذخیره نمی‌شود.
+  const DAY1_HINT_KEY = 'jarvis-studio-day1-hint-seen'
+  function day1HintSeen() {
+    try {
+      return (
+        typeof window !== 'undefined' && window.localStorage?.getItem(DAY1_HINT_KEY) === '1'
+      )
+    } catch {
+      return false
+    }
+  }
+  let showDay1Hint = $state(!day1HintSeen())
+  function dismissDay1Hint() {
+    try {
+      window.localStorage?.setItem(DAY1_HINT_KEY, '1')
+    } catch {
+      /* ذخیرهٔ محلی در دسترس نیست؛ فقط همین نشست مخفی می‌شود */
+    }
+    showDay1Hint = false
+  }
   function studioRoute() {
     const m = router.path.match(/^\/lesson\/(\d+)$/)
     if (m) return `#/studio?lab=lab-${m[1]}`
@@ -105,6 +127,22 @@
         <span>ورود به استودیو</span>
         <span class="text-xs opacity-80" dir="ltr">{studioKeyHint}</span>
       </button>
+
+      <!-- کارت شیشه‌ای یک‌بارمصرف روز اول -->
+      {#if showDay1Hint}
+        <div class="glass-card p-3">
+          <p class="text-xs leading-6">هر جا که بودی، با Ctrl+J میز کارت را باز کن</p>
+          <div class="mt-2 flex justify-end">
+            <button
+              type="button"
+              class="btn-ml-ghost !min-h-[32px] px-3 text-xs"
+              onclick={dismissDay1Hint}
+            >
+              فهمیدم
+            </button>
+          </div>
+        </div>
+      {/if}
 
       {#if auth.isTeacher}
         <button
