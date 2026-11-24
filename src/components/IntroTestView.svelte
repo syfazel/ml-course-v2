@@ -1,31 +1,44 @@
 <script>
-  // Phase R0 — isolated opening test route (#/intro-test).
+  // Phase R0/R1 — isolated opening test route (#/intro-test).
   // Renders the cinematic opening with MOCK data only: no login, no token,
-  // no Codespace wake, no Gateway, no session. The debug panel probes the
-  // 6 WebP images + 3 MP3s independently and shows their load status, so
-  // a "no picture" or "no sound" failure can be told apart from a stale
+  // no Codespace wake, no Gateway, no session. The debug panel shows the
+  // opening's own resilient preloader results (retries + fallbacks), so a
+  // "no picture" or "no sound" failure can be told apart from a stale
   // bundle or a dead Codespace. The opening itself keeps its locked
   // behavior (8s, no buttons/timeline; onDone -> finished state).
+  //
+  // Resilience test (R1): open with ?fail= to force-fail assets, e.g.
+  //   #/intro-test?fail=emblem,jarvis
+  //   #/intro-test?fail=wordmarkLight.webp,eagle.mp3
+  // The named assets never load: the opening must paint its visible
+  // fallback and name them in the saffron bar instead of going blank.
   import { onMount } from 'svelte'
   import { router } from '../lib/router.svelte.js'
   import StudioOpening from './StudioOpening.svelte'
+  import { OPENING_ASSETS, ERROR_LABELS } from '../lib/studio-opening-preload.js'
 
-  const IMAGE_ASSETS = [
-    { key: 'emblem', label: 'نشان عقاب', src: 'studio-opening/emblem.webp' },
-    { key: 'emblemBaseOpen', label: 'نشان (منقار باز)', src: 'studio-opening/emblemBaseOpen.webp' },
-    { key: 'lowerBeak', label: 'منقار پایین', src: 'studio-opening/lowerBeak.webp' },
-    { key: 'upperBeak', label: 'منقار بالا', src: 'studio-opening/upperBeak.webp' },
-    { key: 'wordmarkLight', label: 'لوگوی متنی (روشن)', src: 'studio-opening/wordmarkLight.webp' },
-    { key: 'wordmarkDark', label: 'لوگوی متنی (تیره)', src: 'studio-opening/wordmarkDark.webp' }
-  ]
-  const AUDIO_ASSETS = [
-    { key: 'intro', label: 'صدای ورودی', src: 'studio-opening/intro.mp3' },
-    { key: 'eagle', label: 'غرش عقاب', src: 'studio-opening/eagle.mp3' },
-    { key: 'jarvis', label: 'صدای جارویس', src: 'studio-opening/jarvis.mp3' }
-  ]
+  // Accept keys ("emblem", "jarvis") or file names ("emblem.webp", "jarvis.mp3").
+  function parseFailKeys(raw) {
+    if (!raw) return []
+    const byName = new Map()
+    for (const a of OPENING_ASSETS) {
+      byName.set(a.key, a.key)
+      byName.set(a.src.split('/').pop(), a.key)
+      byName.set(a.src.split('/').pop().replace(/\.(webp|mp3)$/, ''), a.key)
+    }
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => byName.get(s))
+      .filter(Boolean)
+  }
+
+  const failKeys = parseFailKeys(router.params?.fail || '')
 
   let statuses = $state({})
   let done = $state(false)
+  let loopStopped = $state(false)
   let playKey = $state(0)
   let panelOpen = $state(true)
 
@@ -33,34 +46,33 @@
     Object.values(statuses).filter((s) => s.state === 'loaded').length
   )
   let errorCount = $derived(
-    Object.values(statuses).filter((s) => s.state === 'error').length
+    Object.values(statuses).filter((s) => s.state === 'failed').length
   )
 
   function setStatus(key, state, detail = '') {
     statuses = { ...statuses, [key]: { state, detail } }
   }
 
-  function probeAssets() {
-    for (const a of IMAGE_ASSETS) {
-      setStatus(a.key, 'loading')
-      const im = new Image()
-      im.onload = () => setStatus(a.key, 'loaded', `${im.naturalWidth}×${im.naturalHeight}`)
-      im.onerror = () => setStatus(a.key, 'error', 'لود نشد')
-      im.src = a.src
-    }
-    for (const a of AUDIO_ASSETS) {
-      setStatus(a.key, 'loading')
-      const au = new Audio()
-      au.preload = 'auto'
-      au.addEventListener('canplaythrough', () => setStatus(a.key, 'loaded'), { once: true })
-      au.addEventListener('error', () => setStatus(a.key, 'error', 'لود نشد'), { once: true })
-      au.src = a.src
-      au.load()
-    }
+  function resetStatuses() {
+    statuses = {}
+    for (const a of OPENING_ASSETS) setStatus(a.key, 'loading')
+  }
+
+  // R1 — fed by the opening's own preloader (single source of truth):
+  // each asset reports loaded/failed with its retry count.
+  function onAssetResult(result) {
+    const tries = result.attempts > 0 ? ` · ${result.attempts} تلاش` : ''
+    const detail =
+      result.status === 'loaded'
+        ? `${result.detail || ''}${tries}`.trim()
+        : `${ERROR_LABELS[result.error] || 'لود نشد'}${tries} · جایگزین`
+    setStatus(result.key, result.status === 'loaded' ? 'loaded' : 'failed', detail)
   }
 
   function replay() {
     done = false
+    loopStopped = false
+    resetStatuses()
     playKey += 1
   }
 
@@ -69,13 +81,18 @@
   }
 
   onMount(() => {
-    probeAssets()
+    resetStatuses()
   })
 </script>
 
 {#if !done}
   {#key playKey}
-    <StudioOpening onDone={() => (done = true)} />
+    <StudioOpening
+      onDone={() => (done = true)}
+      onAssets={onAssetResult}
+      onLoopStopped={() => (loopStopped = true)}
+      failKeys={failKeys}
+    />
   {/key}
 {:else}
   <div class="min-h-dvh warm-mesh flex flex-col items-center justify-center gap-4 p-6 text-center">
@@ -84,6 +101,9 @@
     <p class="text-sm text-[var(--ink-soft)]">
       ۸ ثانیهٔ سینمایی پخش شد — این فقط یک پیش‌نمایش آزمایشی بود، بدون ورود و بدون استودیو.
     </p>
+    {#if loopStopped}
+      <p class="text-xs font-bold" style="color:#B5720A">چرخهٔ انیمیشن بعد از ثانیهٔ ۸ کاملاً متوقف شد (rAF خاموش).</p>
+    {/if}
     <div class="flex flex-wrap justify-center gap-2">
       <button type="button" class="btn-ml-primary" onclick={replay}>پخش دوباره</button>
       <button type="button" class="btn-ml-ghost" onclick={backToCourse}>بازگشت به دوره</button>
@@ -91,7 +111,7 @@
   </div>
 {/if}
 
-<!-- پنل دیباگ — وضعیت لود دارایی‌های افتتاحیه -->
+<!-- پنل دیباگ — وضعیت لود دارایی‌های افتتاحیه (از پیش‌لودر خود افتتاحیه) -->
 <div
   class="intro-debug"
   role="group"
@@ -101,24 +121,30 @@
   <button type="button" class="intro-debug-head" onclick={() => (panelOpen = !panelOpen)}>
     <span class="font-bold">تست افتتاحیه</span>
     <span class="intro-debug-count" data-state={errorCount > 0 ? 'error' : 'ok'}>
-      {loadedCount}/{IMAGE_ASSETS.length + AUDIO_ASSETS.length} لود شد
+      {loadedCount}/{OPENING_ASSETS.length} لود شد
     </span>
     <span aria-hidden="true">{panelOpen ? '▾' : '▴'}</span>
   </button>
   {#if panelOpen}
     <ul class="intro-debug-list">
-      {#each [...IMAGE_ASSETS, ...AUDIO_ASSETS] as a}
+      {#each OPENING_ASSETS as a}
         {@const s = statuses[a.key] || { state: 'loading', detail: '' }}
         <li>
           <span class="intro-debug-dot" data-state={s.state}></span>
           <span>{a.label}</span>
           <span class="intro-debug-detail" dir="ltr">
-            {s.state === 'loaded' ? (s.detail || '✓') : s.state === 'error' ? (s.detail || 'خطا') : '…'}
+            {s.state === 'loaded' ? (s.detail || '✓') : s.state === 'failed' ? (s.detail || 'خطا') : '…'}
           </span>
         </li>
       {/each}
     </ul>
-    <p class="intro-debug-hint">برای پخش با صدا روی صحنه ضربه بزن. این صفحه بدون ورود و بدون استودیو است.</p>
+    {#if failKeys.length > 0}
+      <p class="intro-debug-hint">تست تاب‌آوری فعال است — دارایی‌های مسدودشده: {failKeys.join('، ')}.</p>
+    {/if}
+    {#if loopStopped}
+      <p class="intro-debug-hint">rAF بعد از ثانیهٔ ۸ متوقف شد.</p>
+    {/if}
+    <p class="intro-debug-hint">برای پخش با صدا روی صحنه ضربه بزن؛ اگر صدا بلاک شد، دکمهٔ «ضربه برای صدا» می‌آید. این صفحه بدون ورود و بدون استودیو است.</p>
   {/if}
 </div>
 
@@ -152,8 +178,10 @@
     font-weight: 700;
     color: #48e5cf;
   }
+  /* R1 — error colour is saffron #B5720A (dot); the count text uses a
+     lighter saffron tint of the same hue so it stays readable on dark. */
   .intro-debug-count[data-state='error'] {
-    color: #ffb199;
+    color: #e8a33d;
   }
   .intro-debug-list {
     list-style: none;
@@ -175,8 +203,8 @@
   .intro-debug-dot[data-state='loaded'] {
     background: #48e5cf;
   }
-  .intro-debug-dot[data-state='error'] {
-    background: #ff7e47;
+  .intro-debug-dot[data-state='failed'] {
+    background: #b5720a;
   }
   .intro-debug-detail {
     margin-inline-start: auto;

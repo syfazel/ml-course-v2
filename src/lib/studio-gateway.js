@@ -46,6 +46,30 @@ export function clearStudioSession() {
 /** Call the wake Edge Function with the student's Supabase JWT.
  *  Handles the 202 "starting" reply by retrying after `retry_after_seconds`.
  *  Returns { ticket, gatewayUrl }. Throws StudioGatewayError on failure. */
+/** Read the wake function's own error body (if any) so the error card can
+ *  show the real step that failed instead of the generic non-2xx line.
+ *  supabase-js puts the raw Response in error.context; older shapes may
+ *  already hold parsed data or a string, so all three are handled. */
+async function wakeErrorDetail(error, status) {
+  const ctx = error?.context
+  let body = null
+  try {
+    if (ctx && typeof ctx.json === 'function') body = await ctx.json()
+    else if (ctx && typeof ctx.text === 'function') body = await ctx.text()
+    else if (ctx && typeof ctx === 'object') body = ctx
+    else if (typeof ctx === 'string') body = ctx
+  } catch {
+    body = null
+  }
+  const fnErr =
+    (body && typeof body === 'object' && (body.error || body.message)) ||
+    (typeof body === 'string' && body) ||
+    null
+  const base = error?.message || `status ${status || 'unknown'}`
+  const fnPart = fnErr ? String(fnErr).slice(0, 200) : null
+  return `wake HTTP ${status || '?'}${fnPart ? ` — ${fnPart}` : ` — ${base}`}`
+}
+
 export async function wakeStudio(sb, { onProgress = () => {}, maxAttempts = 12 } = {}) {
   if (!sb) {
     throw new StudioGatewayError('wake', 'پیکربندی سرور در این بیلد موجود نیست.')
@@ -63,20 +87,17 @@ export async function wakeStudio(sb, { onProgress = () => {}, maxAttempts = 12 }
     }
     if (error) {
       const status = error?.context?.status || error?.status
+      const detail = await wakeErrorDetail(error, status)
       if (status === 401) {
-        throw new StudioGatewayError('unauthorized', 'نشست شما منقضی شده است؛ دوباره وارد شوید.')
+        throw new StudioGatewayError('unauthorized', 'نشست شما منقضی شده است؛ دوباره وارد شوید.', detail)
       }
       if (status === 403) {
-        throw new StudioGatewayError('wake', 'این حساب به Jarvis Studio دسترسی ندارد.')
+        throw new StudioGatewayError('wake', 'این حساب به Jarvis Studio دسترسی ندارد.', detail)
       }
       if (status === 503) {
-        throw new StudioGatewayError('wake', 'سرویس بیداری هنوز پیکربندی نشده است.')
+        throw new StudioGatewayError('wake', 'سرویس بیداری هنوز پیکربندی نشده است.', detail)
       }
-      throw new StudioGatewayError(
-        'wake',
-        'بیدار کردن استودیو ناموفق بود.',
-        error?.message || `status ${status || 'unknown'}`
-      )
+      throw new StudioGatewayError('wake', 'بیدار کردن استودیو ناموفق بود.', detail)
     }
     if (data && data.status === 'available' && data.ticket && data.gateway_url) {
       return { ticket: data.ticket, gatewayUrl: data.gateway_url }

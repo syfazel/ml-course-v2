@@ -9,13 +9,21 @@
   import { onMount, onDestroy } from 'svelte'
   import { createStudioOpening } from '../lib/studio-opening.js'
 
-  let { onDone = () => {} } = $props()
+  // R1 — onAssets: per-asset preload result (for the /intro-test panel);
+  // onLoopStopped: fires once when the rAF loop fully stops after second 8;
+  // failKeys: asset keys to force-fail (resilience test hook, /intro-test only).
+  let { onDone = () => {}, onAssets = () => {}, onLoopStopped = () => {}, failKeys = [] } = $props()
 
   let stageEl
   let handle = null
 
   onMount(() => {
-    handle = createStudioOpening(stageEl, { onDone: () => onDone() })
+    handle = createStudioOpening(stageEl, {
+      onDone: () => onDone(),
+      onAssets,
+      onLoopStopped,
+      failKeys
+    })
   })
 
   onDestroy(() => {
@@ -27,6 +35,23 @@
 <div id="stage" class="theme-dark studio-opening" bind:this={stageEl}>
   <canvas id="fxCanvas"></canvas>
   <div class="vignette"></div>
+
+  <!-- R1 — saffron asset-status bar (visible only when an asset finally fails) -->
+  <div id="assetStatusBar" class="hidden" role="status"></div>
+
+  <!-- R1 — tap-for-sound layer (visible only while audio is blocked) -->
+  <button id="tapSoundLayer" type="button" class="hidden" aria-label="ضربه برای پخش صدا">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+    <span>ضربه برای صدا</span>
+  </button>
+
+  <!-- R1 — mobile DOM layers: SVG ring + wordmark reveal (compact screens only) -->
+  <svg id="domRing" viewBox="0 0 100 100" aria-hidden="true">
+    <circle id="domRingGold" cx="50" cy="50" r="48" pathLength="100" />
+    <circle id="domRingCyan" cx="50" cy="50" r="44" pathLength="100" />
+  </svg>
+  <img id="domWordmarkLight" src="studio-opening/wordmarkLight.webp" alt="" aria-hidden="true" />
+  <img id="domWordmarkDark" src="studio-opening/wordmarkDark.webp" alt="" aria-hidden="true" />
 
   <!-- Hidden chrome (display:none via CSS) — ids required by the script -->
   <button id="soundBanner" type="button" aria-label="پخش با صدای عقاب و جارویس">
@@ -499,7 +524,82 @@
     .studio-opening {
       position: fixed;
       inset: 0;
+      width: 100dvw;
+      height: 100dvh;
       z-index: 60;
+    }
+
+    /* R1 — resilience UI (error colour is saffron #B5720A, never
+       terracotta and never gate-red; no emoji as icons). */
+    #assetStatusBar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 70;
+      background: #B5720A;
+      color: #241a05;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.6;
+      text-align: center;
+      padding: 5px 12px;
+      pointer-events: none;
+    }
+    #assetStatusBar.hidden,
+    #tapSoundLayer.hidden {
+      display: none;
+    }
+    #tapSoundLayer {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 65;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 22px;
+      border-radius: 999px;
+      background: rgba(9, 34, 30, 0.92);
+      border: 1px solid rgba(230, 179, 90, 0.58);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.48), 0 0 26px rgba(230, 179, 90, 0.25);
+      color: #fff6e0;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      animation: tapPulse 2.1s infinite ease-in-out;
+    }
+    @keyframes tapPulse {
+      0%, 100% { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.48), 0 0 16px rgba(230, 179, 90, 0.22); }
+      50% { box-shadow: 0 10px 34px rgba(0, 0, 0, 0.56), 0 0 34px rgba(72, 229, 207, 0.45); }
+    }
+    #domRing {
+      position: absolute;
+      display: none;
+      pointer-events: none;
+      overflow: visible;
+    }
+    #domRingGold {
+      fill: none;
+      stroke: #ffd67a;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+    }
+    #domRingCyan {
+      fill: none;
+      stroke: #48e5cf;
+      stroke-width: 1.1;
+      stroke-linecap: round;
+    }
+    #domWordmarkLight,
+    #domWordmarkDark {
+      position: absolute;
+      display: none;
+      pointer-events: none;
+      filter: drop-shadow(0 0 10px rgba(230, 179, 90, 0.45));
     }
 
 </style>
