@@ -35,6 +35,18 @@
   function gateFor(phaseNo) {
     return gates.find((g) => g.phase === phaseNo) || null
   }
+
+  // Jarvis Studio — ورود از سربرگ؛ اگر روی درسی هستیم، همان لب باز می‌شود.
+  const studioKeyHint =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '')
+      ? '⌘J'
+      : 'Ctrl+J'
+  function studioRoute() {
+    const m = router.path.match(/^\/lesson\/(\d+)$/)
+    if (m) return `#/studio?lab=lab-${m[1]}`
+    if (router.path === '/lesson/day-0') return '#/studio?lab=lab-0'
+    return '#/studio'
+  }
 </script>
 
 <!-- سایدبار سه‌سطحی (فاز ← درس ← مرحله) در سمت راست برای RTL -->
@@ -82,6 +94,16 @@
         onclick={() => router.go('#/')}
       >
         <span>خانه و قدم بعدی</span>
+      </button>
+
+      <!-- Jarvis Studio — کپسول تراکوتا + نشان کلید -->
+      <button
+        type="button"
+        class="btn-ml-primary w-full text-sm flex items-center justify-between"
+        onclick={() => router.go(studioRoute())}
+      >
+        <span>ورود به استودیو</span>
+        <span class="text-xs opacity-80" dir="ltr">{studioKeyHint}</span>
       </button>
 
       {#if auth.isTeacher}

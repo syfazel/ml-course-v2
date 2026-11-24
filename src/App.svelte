@@ -22,6 +22,7 @@
   import CapstoneView from './components/CapstoneView.svelte'
   import TeacherDashboardView from './components/TeacherDashboardView.svelte'
   import VideoView from './components/VideoView.svelte'
+  import StudioView from './components/StudioView.svelte'
 
   let simpleMode = $state(false)
   let day0Progress = $state(null)
@@ -115,15 +116,40 @@
     }
   }
 
+  // Jarvis Studio — Ctrl/Cmd+J دوطرفه (toggle) با e.code (روی کیبورد فارسی
+  // e.key برای J می‌شود «ت» ولی e.code می‌ماند KeyJ)؛ فالبک Ctrl/Cmd+\.
+  let lastNonStudioHash = $state('#/')
+  function toggleStudio() {
+    if (!auth.canOperate) return
+    if (router.path === '/studio') {
+      router.go(lastNonStudioHash.startsWith('#') ? lastNonStudioHash : '#/')
+    } else {
+      lastNonStudioHash = window.location.hash || '#/'
+      const lab = currentUnitId !== null ? `?lab=lab-${currentUnitId}` : ''
+      router.go(`#/studio${lab}`)
+    }
+  }
+
   onMount(() => {
     const stopRouter = router.init()
     let stopAuth = () => {}
     initAuth().then((unsub) => {
       stopAuth = unsub
     })
+    const onStudioKey = (e) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.code === 'KeyJ' || e.code === 'Backslash')
+      ) {
+        e.preventDefault()
+        toggleStudio()
+      }
+    }
+    window.addEventListener('keydown', onStudioKey)
     return () => {
       stopRouter()
       stopAuth()
+      window.removeEventListener('keydown', onStudioKey)
     }
   })
 
@@ -147,6 +173,10 @@
   </div>
 {:else if !auth.canOperate || router.path === '/login' || router.path === '/reset-password'}
   <LoginView />
+{:else if router.path === '/studio'}
+  {#key router.params.lab || 'default'}
+    <StudioView labCode={router.params.lab || null} />
+  {/key}
 {:else}
   <div class="min-h-screen p-4 max-w-7xl mx-auto flex flex-col lg:flex-row gap-5">
     <!-- در dir="rtl"، اولین فرزند flex در سمت راست قرار می‌گیرد -->
