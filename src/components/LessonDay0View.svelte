@@ -83,7 +83,7 @@
     </div>
     <h1 class="text-2xl font-extrabold">{DAY0_LESSON.title}</h1>
     <p class="text-xs text-[var(--ink-soft)]">
-      پیشرفت این درس در جدول <code>day_progress</code> با <code>unit_code = 'day-0'</code> ذخیره می‌شود و فقط شما و استاد آن را می‌بینید.
+      پیشرفت این درس ذخیره می‌شود و فقط شما و استاد آن را می‌بینید.
     </p>
 
     {#if auth.isTeacher}

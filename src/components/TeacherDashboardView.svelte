@@ -148,7 +148,7 @@
 
       <!-- جدول پیشرفت درس -->
       <section class="paper-card p-5 space-y-3">
-        <h2 class="text-sm font-extrabold">پیشرفت درس‌به‌درس (day_progress)</h2>
+        <h2 class="text-sm font-extrabold">پیشرفت درس‌به‌درس</h2>
         {#if dashboard.progress.length === 0}
           <p class="text-xs text-[var(--ink-soft)]">هیچ ردیف پیشرفتی هنوز ثبت نشده است.</p>
         {:else}
