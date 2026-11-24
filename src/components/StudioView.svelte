@@ -567,7 +567,18 @@
   <StudioOpening onDone={onOpeningDone} />
 {:else if phase === 'waking' || phase === 'launching'}
   <div class="min-h-dvh warm-mesh flex flex-col items-center justify-center gap-5 p-6 text-center">
-    <img src="logo/jarvis-studio-shield-64.png" alt="Jarvis Studio" width="64" height="64" />
+    <!-- R3 — لوپ شیلد با اسم روی صفحهٔ بیداری/launching -->
+    <video
+      src="studio-opening/jarvis-studio-shield-loop-v2-name.mp4"
+      poster="studio-opening/jarvis-studio-shield-loop-poster.jpg"
+      autoplay
+      muted
+      loop
+      playsinline
+      preload="auto"
+      class="h-40 w-40 rounded-3xl object-cover shadow-[0_8px_24px_rgba(30,25,22,0.12)]"
+      aria-label="Jarvis Studio — در حال بیدار کردن استودیو"
+    ></video>
     <h1 class="text-xl font-extrabold">Jarvis Studio</h1>
     <p class="text-sm text-[var(--ink-soft)]">
       {wakeState === 'sleeping'

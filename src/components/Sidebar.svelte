@@ -124,7 +124,11 @@
         class="btn-ml-primary w-full text-sm flex items-center justify-between"
         onclick={() => router.go(studioRoute())}
       >
-        <span>ورود به استودیو</span>
+        <!-- R3 — نشان شفاف ۲۸px -->
+        <span class="flex items-center gap-2">
+          <img src="logo/jarvis-studio-shield-emblem-transparent-28.png" alt="" width="28" height="28" class="shrink-0" />
+          <span>ورود به استودیو</span>
+        </span>
         <span class="text-xs opacity-80" dir="ltr">{studioKeyHint}</span>
       </button>
 

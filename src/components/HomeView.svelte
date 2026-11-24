@@ -79,6 +79,24 @@
       target: '#/capstone'
     }
   })
+  // R3 — تیزر v3 لوگوی M: لود تنبل؛ src فقط وقتی بلاک وارد دید شد
+  let teaserVideo = $state(null)
+  $effect(() => {
+    const el = teaserVideo
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          el.src = 'studio-opening/video-teaser-logo-v3.mp4'
+          el.load()
+          io.disconnect()
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  })
 </script>
 
 <div class="space-y-6">
@@ -139,6 +157,40 @@
           پیش‌نمایش درس روز ۰
         </button>
       {/if}
+    </div>
+  </section>
+
+  <!-- R3 — تیزر Jarvis Studio (لوگوی M، نسخهٔ v3) -->
+  <section class="glass-card overflow-hidden">
+    <div class="grid gap-4 p-5 sm:grid-cols-[1fr_1.2fr] sm:items-center sm:p-6">
+      <div class="space-y-3">
+        <span class="badge bg-[var(--amber)] text-white border-0 font-bold">Jarvis Studio</span>
+        <h2 class="text-lg font-extrabold">آتلیهٔ یادگیری ماشین — جایی که کد اجرا می‌شود</h2>
+        <p class="text-sm text-[var(--ink-soft)] leading-7">
+          هر آزمایشگاه دوره یک میز استودیویی دارد: کد، خروجی زنده و ابزارهای دیداری — با
+          TensorFlow واقعی روی ماشینی که با یک کلیک بیدار می‌شود.
+        </p>
+        <button
+          type="button"
+          class="btn-ml-primary text-sm"
+          onclick={() => router.go('#/studio?lab=lab-1')}
+        >
+          ورود به استودیو
+        </button>
+      </div>
+      <div class="overflow-hidden rounded-2xl border border-[var(--glass-border)]">
+        <video
+          bind:this={teaserVideo}
+          poster="studio-opening/video-teaser-logo-v3-poster.jpg"
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="none"
+          class="aspect-video w-full object-cover"
+          aria-label="تیزر Jarvis Studio — لوگوی M"
+        ></video>
+      </div>
     </div>
   </section>
 
