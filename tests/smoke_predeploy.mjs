@@ -168,7 +168,11 @@ try {
   // دروازهٔ ورود (۲۵ نوامبر ۲۰۲۶): اگر اسپلش «برای ورود ضربه بزن» هست،
   // آن را می‌زنیم و ویدیو را تا نزدیک پایان جلو می‌بریم تا 'ended' همان‌جا
   // بخورد (شتاب تست؛ رفتار واقعی همان پخش کامل ۱۰ ثانیه‌ای است).
+  // اول صبر می‌کنیم اسپلش یا فرم خودش را نشان بدهد — بلافاصله بعد از
+  // ریلود، صفحه هنوز mount نشده و نبودِ اسپلش به‌معنای نبودِ دروازه نیست.
   const passEntryGate = async () => {
+    const appeared = await waitFor(async () => (await hasText('برای ورود ضربه بزن')) || (await hasText('ورود به دوره')), 8000);
+    if (!appeared) return false;
     if (!(await hasText('برای ورود ضربه بزن'))) return true;
     const clicked = await evalJs(`(() => {
       const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('برای ورود ضربه بزن'));
@@ -200,11 +204,13 @@ try {
   await sleep(1500);
   await evalJs(`localStorage.clear()`);
   await send('Page.reload', { ignoreCache: true });
+  await sleep(1500);
   await passEntryGate();
   let mounted = await waitFor(async () => await hasText('ورود به دوره'), 10000);
   let errs = await pageErrors();
   check('smoke: خانه بالا می‌آید', mounted && errs.length === 0, mounted ? errs.join(' | ') : 'نشانگر دیده نشد');
   await send('Page.navigate', { url: ORIGIN + '/#/login' });
+  await sleep(1200);
   await passEntryGate();
   mounted = await waitFor(async () => await hasText('ورود به دوره'), 10000);
   errs = await pageErrors();
