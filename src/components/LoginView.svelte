@@ -6,7 +6,6 @@
     requestPasswordReset,
     completePasswordReset,
     retryMemberRead,
-    clearStaleSession,
     signOut
   } from '../lib/auth.js'
   import { memberErrorCode } from '../lib/auth-errors.js'
@@ -75,19 +74,6 @@
         return
       }
       feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false }
-    } finally {
-      busy = false
-    }
-  }
-
-  // فاز ۳ (F6): پاک‌کردن نشست کهنه و ورود تازه — وقتی نشستِ ذخیره‌شده
-  // کهنه/خراب است و ورود تازه پشت «نشست منقضی شده» قفل شده.
-  async function handleClearStale() {
-    feedback = null
-    busy = true
-    try {
-      const res = await clearStaleSession()
-      feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: false }
     } finally {
       busy = false
     }
@@ -199,15 +185,12 @@
       {/if}
 
       {#if auth.sessionNotice}
-        <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-3">
+        <!-- (۲۵ نوامبر ۲۰۲۶) فقط یک خط راهنما — دیگر دیوار «منقضی شده»
+             با دکمهٔ دستیِ «پاک‌کردن نشست کهنه» نیست: نشست کهنه در
+             مسیر انقضای واقعی، خودش و بی‌صدا پاک می‌شود و فرم ورود
+             همین‌جا آماده است. -->
+        <div class="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p>{auth.sessionNotice}</p>
-          {#if auth.sessionExpired}
-            <!-- فاز ۳ (F6): نشست کهنه را کامل پاک کن و از اول وارد شو —
-                 برای وقتی که نشستِ ذخیره‌شده خراب است و ورود تازه قفل شده. -->
-            <button type="button" class="btn-ml-primary text-xs w-full" onclick={handleClearStale} disabled={busy}>
-              {busy ? 'در حال پاک‌کردن...' : 'پاک‌کردن نشست کهنه و ورود تازه'}
-            </button>
-          {/if}
         </div>
       {/if}
 

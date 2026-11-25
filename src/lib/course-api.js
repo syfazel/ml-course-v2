@@ -3,12 +3,26 @@
 
 import { sb } from './supabase.js'
 import { auth } from './auth-store.svelte.js'
-import { isSessionExpiredError, SESSION_EXPIRED_MESSAGE } from './auth-errors.js'
+import {
+  isSessionExpiredError,
+  isUnauthorizedError,
+  SESSION_EXPIRED_MESSAGE
+} from './auth-errors.js'
+import { refreshSessionOnce } from './auth.js'
 
+// (۲۵ نوامبر ۲۰۲۶) 401 روی خواندن/نوشتن داده، نشست را پاک نمی‌کند:
+// توکن ممکن است در همان لحظه در حال چرخش باشد. یک refresh در پس‌زمینه
+// امتحان می‌شود و خطا فقط همان فراخوانی را برمی‌گرداند — کاربر وارد
+// مانده و تلاش بعدی با توکن تازه انجام می‌شود. فقط مرگ صریحِ
+// refresh token (isSessionExpiredErrorِ محدودشده) نشست را می‌بندد.
 function handleApiError(error, fallbackMessage) {
   if (isSessionExpiredError(error)) {
     auth.resetSession({ expired: true, notice: SESSION_EXPIRED_MESSAGE })
     return SESSION_EXPIRED_MESSAGE
+  }
+  if (isUnauthorizedError(error)) {
+    void refreshSessionOnce().catch(() => {})
+    return 'دسترسی به سرور در این لحظه برقرار نشد؛ دوباره تلاش کنید.'
   }
   return error?.message || fallbackMessage
 }

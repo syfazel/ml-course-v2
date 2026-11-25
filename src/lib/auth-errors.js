@@ -14,21 +14,42 @@ export function isRateLimitError(err) {
   )
 }
 
+// «نشست منقضی شده» فقط وقتی درست است که لایهٔ Auth صریحاً بگوید
+// refresh token مرده است — نه با هر 401.
+// علت ریشه‌ای قفلِ ورود (۲۵ نوامبر ۲۰۲۶): هر 401 روی خواندن داده
+// (مثلاً JWT در لحظهٔ چرخش توکن، یا یک 401 گذرا از PostgREST) اینجا
+// «منقضی» فرض می‌شد و نشستِ همین حالا با رمز درست ساخته‌شده، همان لحظه
+// پاک می‌شد — یعنی رمز درست، مستقیم به خطای «نشست منقضی شده» می‌رسید.
+// 401 روی داده حالا isUnauthorizedError است: یک بار refresh و تکرار،
+// نه اعلام انقضا.
 export function isSessionExpiredError(err) {
   if (!err) return false
-  const status = err.status || err.statusCode
   const code = String(err.code || '').toLowerCase()
   const msg = String(err.message || err).toLowerCase()
   return (
-    status === 401 ||
     code === 'session_not_found' ||
     code === 'refresh_token_not_found' ||
     code === 'invalid_refresh_token' ||
+    msg.includes('refresh token not found') ||
+    msg.includes('invalid refresh token') ||
+    msg.includes('session not found')
+  )
+}
+
+// 401 لایهٔ داده (PostgREST و جز آن): توکنِ همراه درخواست پذیرفته نشد.
+// به‌تنهایی انقضا نیست — توکن ممکن است در همان لحظه در حال چرخش باشد
+// یا درخواست با توکنِ یک لحظه پیش فرستاده شده باشد. پاسخ درست:
+// یک بار refresh و تکرار همان خواندن؛ فقط اگر refresh هم صریحاً
+// بگوید توکن مرده و نشستی زنده نمانده، «منقضی» اعلام می‌شود.
+export function isUnauthorizedError(err) {
+  if (!err) return false
+  const status = err.status || err.statusCode
+  const msg = String(err.message || err).toLowerCase()
+  return (
+    status === 401 ||
     msg.includes('jwt expired') ||
     msg.includes('invalid jwt') ||
-    msg.includes('refresh token') ||
-    msg.includes('session not found') ||
-    msg.includes('auth session missing')
+    msg.includes('invalid token')
   )
 }
 
