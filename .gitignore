@@ -7,3 +7,7 @@ dist/
 
 # Phase 5: local harness run artifacts (not committed; the tree must stay clean for builds)
 tests/phase5-local-results.json
+
+# پروژهٔ نیتیو Capacitor (فاز ۱ اپ): روی شاخهٔ اپ رهگیری می‌شود؛ روی شاخه‌های وب فقط
+# خروجیِ cap sync روی دیسک است و نباید گیت بیلد/دیپلوی وب را کثیف کند.
+android/
