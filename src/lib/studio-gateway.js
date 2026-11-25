@@ -298,6 +298,18 @@ export function studioGateway(gatewayUrl) {
     saveNotebook: (name, content) =>
       gatewayFetch('/notebooks', { method: 'POST', body: { name, content }, timeoutMs: 30000 }),
     loadNotebook: (name) =>
-      gatewayFetch(`/notebooks/${encodeURIComponent(name)}`, { timeoutMs: 30000 })
+      gatewayFetch(`/notebooks/${encodeURIComponent(name)}`, { timeoutMs: 30000 }),
+    // ترمینال واقعی (فاز A) — HTTP polling فقط: وب‌سوکت از پورت
+    // فورواردشده خراب است، پس خروجی پول می‌شود و کلیدها POST می‌شوند.
+    // POST /terminal/input عمداً retry نمی‌شود (کلید تکراری فرستاده نشود)؛
+    // GET /terminal/output خواندنیِ بی‌اثر است و retry امن دارد.
+    terminalInput: (data) =>
+      gatewayFetch('/terminal/input', { method: 'POST', body: { data } }),
+    terminalOutput: (since) =>
+      gatewayFetch(`/terminal/output?since=${encodeURIComponent(since ?? 0)}`, {
+        timeoutMs: 30000
+      }),
+    terminalResize: (cols, rows) =>
+      gatewayFetch('/terminal/resize', { method: 'POST', body: { cols, rows } })
   }
 }

@@ -1,17 +1,26 @@
 <script>
-  // Jarvis Studio — the desk (Phase 4).
+  // Jarvis Studio — the desk (Phase 4 + Phase A: free notebook + terminal).
   // Entry flow: wake (Edge Function, JWT) -> one-time ticket -> /launch ->
   // cinematic opening -> dual desk (code tablet 55% / observation canvas
   // 45%) with /execute cells (HTTP polling only — no browser WebSocket;
   // the tunnel breaks it), notebook auto-save to the Gateway AND sync to
   // Supabase lab_notebooks (the same pattern as LabView: save by title,
   // only the student's own rows; the teacher gets a read-only preview).
+  // Phase A — free mode: #/studio WITHOUT ?lab= opens a blank notebook
+  // (custom title, add/remove cells, list + reopen from the Gateway);
+  // ?lab=lab-<id> stays exactly the lab mode from before. A real PTY
+  // terminal (xterm.js, HTTP polling only) lives under the cells in
+  // both modes. The terminal is NOT a keepalive: polling it does not
+  // extend the 30-minute idle deadline.
   // Status light string: ready = dim brass, running = gold pulse,
   // success = patina green, error = saffron + Persian message.
   // Close: best-effort save, the in-memory session is forgotten. There is
   // NO explicit stop path: closing the Studio does not stop the Codespace;
   // it shuts itself down after 30 minutes idle (Gateway idle deadline).
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount, onDestroy, tick } from 'svelte'
+  import { Terminal } from 'xterm'
+  import { FitAddon } from '@xterm/addon-fit'
+  import 'xterm/css/xterm.css'
   import { sb } from '../lib/supabase.js'
   import { auth } from '../lib/auth-store.svelte.js'
   import { COURSE_CONTENT } from '../data/course-content.js'
@@ -59,7 +68,12 @@
     }
     return null
   }
-  const lesson = resolveLesson(labCode)
+  // فاز A — دفترچهٔ آزاد: ورود بدون ?lab= یعنی حالت آزاد (دفترچهٔ خالی
+  // با نام دلخواه)؛ ?lab=lab-<id> یعنی حالت لب‌محور مثل قبل. resolveLesson
+  // فقط در حالت لب‌محور صدا می‌شود — fallback به نخستین لب فقط برای لب
+  // نامعتبر است، نه برای ورود آزاد.
+  const isFreeMode = labCode == null
+  const lesson = isFreeMode ? null : resolveLesson(labCode)
   const labCodeResolved = lesson ? `lab-${lesson.id}` : null
   const datasets = lesson ? COURSE_CONTENT.labDatasets[String(lesson.id)] || [] : []
   function isValidReturnHash(h) {
@@ -91,6 +105,21 @@
   let sliderDegree = $state(2)
   let sliderServer = $state(null) // null | { state: 'running'|'ok'|'error', r2, stdout, error }
   let sheetOpen = $state(false)
+
+  // ---------- دفترچهٔ آزاد (فاز A) ----------
+  let freeName = $state(null) // نام گیت‌وی (ASCII، سازگار با NAME_RE گیت‌وی)
+  let freeTitle = $state('دفترچهٔ آزاد')
+  let freeList = $state(null) // null | [{name, title}]
+  let freeListOpen = $state(false)
+  let freeListLoading = $state(false)
+
+  // ---------- ترمینال واقعی (فاز A) ----------
+  let term = null
+  let termFit = null
+  let termOffset = 0
+  let termPollTimer = null
+  let termInputChain = Promise.resolve()
+  let termOpen = $state(false)
 
   // کارت شیشه‌ای یک‌بارمصرف روز اول در میز — همان پرچم سایدبار، پس واقعاً یک‌بار است.
   // فقط یک پرچم راهنما در localStorage؛ هیچ نشست/توکنی اینجا ذخیره نمی‌شود.
@@ -159,6 +188,10 @@
     return list
   }
   cells = buildCells()
+  if (isFreeMode) {
+    cells = [newFreeCell(1)]
+    freeName = `free-${Math.random().toString(36).slice(2, 8)}`
+  }
 
   // ---------- golden thread map (tool 1): 4 canonical stages ----------
   const STAGES = ['بارگذاری داده', 'پاک‌سازی', 'آموزش مدل', 'ارزیابی']
@@ -332,7 +365,7 @@
       'print("R2 =", round(float(r2), 4))'
     ].join('\n')
     try {
-      const out = await gateway.execute(code, labCodeResolved)
+      const out = await gateway.execute(code, isFreeMode ? freeName : labCodeResolved)
       const res = gatewayOutcomeToOutput(out)
       if (res.error) {
         sliderServer = { state: 'error', r2: null, stdout: res.stdout || '', error: res.error }
@@ -541,7 +574,7 @@
     statusLight = 'running'
     statusLightLabel = 'در حال اجرا'
     try {
-      const out = await gateway.execute(cell.code, labCodeResolved)
+      const out = await gateway.execute(cell.code, isFreeMode ? freeName : labCodeResolved)
       sessionLost = false // نشست زنده است — بنر بازیابی (اگر بود) برداشته می‌شود
       cell.output = gatewayOutcomeToOutput(out)
       cell.matched =
@@ -581,6 +614,7 @@
   }
 
   async function handleSave() {
+    if (isFreeMode) return handleFreeSave()
     if (!labCodeResolved) return
     saveState = 'saving'
     saveNote = ''
@@ -601,6 +635,227 @@
     } else {
       saveState = 'saved'
       saveNote = 'دفترچه ذخیره شد.'
+    }
+  }
+
+  // ---------- دفترچهٔ آزاد (فاز A): ذخیره / فهرست / بازگشایی ----------
+  function newFreeCell(n) {
+    return {
+      kind: 'free',
+      title: `سلول ${n}`,
+      note: '',
+      expected: '',
+      code: '',
+      output: null,
+      running: false,
+      matched: null
+    }
+  }
+
+  function freeNotebookJson() {
+    return {
+      nbformat: 4,
+      nbformat_minor: 5,
+      metadata: {
+        kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' },
+        language_info: { name: 'python', version: '3.11' },
+        title: freeTitle,
+        free: true
+      },
+      cells: cells.map((c) => ({
+        cell_type: 'code',
+        execution_count: null,
+        metadata: {},
+        outputs: c.output
+          ? [
+              {
+                output_type: 'stream',
+                name: c.output.error ? 'stderr' : 'stdout',
+                text: c.output.error || c.output.stdout || ''
+              }
+            ]
+          : [],
+        source: c.code
+      }))
+    }
+  }
+
+  async function handleFreeSave() {
+    if (!gateway || !freeName) return
+    saveState = 'saving'
+    saveNote = ''
+    try {
+      // اول Gateway: فایل دفترچه همان‌جا منبع حقیقت است — بازنویسی کامل،
+      // تا سلول‌های افزوده‌شدهٔ /execute (هر اجرا یک سلول می‌افزاید) تمیز شوند.
+      await gateway.saveNotebook(freeName, freeNotebookJson())
+    } catch (e) {
+      saveState = 'error'
+      saveNote = 'ذخیره در Gateway ناموفق بود.'
+      return
+    }
+    // بعد سینک Supabase با همان الگوی LabView — کلید free-<name> تا
+    // دفترچه‌های آزاد در lab_notebooks کنار لب‌ها بمانند و استاد هم ببیندشان.
+    const payload = cells.map((c) => ({
+      title: c.title,
+      code: c.code,
+      output: c.output
+        ? { stdout: c.output.stdout || '', error: c.output.error || null }
+        : null
+    }))
+    const res = await saveLabNotebook(`free-${freeName}`, payload)
+    if (res.error) {
+      saveState = 'error'
+      saveNote = 'ذخیره در Supabase ناموفق بود؛ دفترچه در Gateway مانده است.'
+    } else if (res.readOnlyPreview) {
+      saveState = 'saved'
+      saveNote = 'پیش‌نمایش استاد — ذخیره نمی‌شود.'
+    } else {
+      saveState = 'saved'
+      saveNote = 'دفترچه ذخیره شد.'
+    }
+  }
+
+  async function refreshFreeList() {
+    if (!gateway) return
+    freeListLoading = true
+    try {
+      const res = await gateway.listNotebooks()
+      const names = (res.notebooks || []).filter((n) => n.startsWith('free-'))
+      const items = []
+      for (const name of names) {
+        let title = name
+        try {
+          const nb = await gateway.loadNotebook(name)
+          if (typeof nb?.metadata?.title === 'string' && nb.metadata.title) {
+            title = nb.metadata.title
+          }
+        } catch {
+          /* نام جای عنوان می‌نشیند */
+        }
+        items.push({ name, title })
+      }
+      freeList = items
+    } catch (e) {
+      freeList = []
+      saveNote = 'خواندن فهرست دفترچه‌ها ناموفق بود.'
+    } finally {
+      freeListLoading = false
+    }
+  }
+
+  async function openFreeNotebook(name) {
+    if (!gateway || running) return
+    try {
+      const nb = await gateway.loadNotebook(name)
+      const loaded = (nb.cells || []).map((c, i) => ({
+        kind: 'free',
+        title: `سلول ${i + 1}`,
+        note: '',
+        expected: '',
+        code: Array.isArray(c.source)
+          ? c.source.join('')
+          : typeof c.source === 'string'
+            ? c.source
+            : '',
+        output: null,
+        running: false,
+        matched: null
+      }))
+      cells = loaded.length ? loaded : [newFreeCell(1)]
+      freeName = name
+      freeTitle =
+        typeof nb?.metadata?.title === 'string' && nb.metadata.title
+          ? nb.metadata.title
+          : name
+      freeListOpen = false
+      activeCell = 0
+      saveState = null
+      saveNote = ''
+    } catch (e) {
+      saveNote = 'باز کردن دفترچه ناموفق بود.'
+    }
+  }
+
+  function newFreeNotebook() {
+    cells = [newFreeCell(1)]
+    freeName = `free-${Math.random().toString(36).slice(2, 8)}`
+    freeTitle = 'دفترچهٔ آزاد'
+    activeCell = 0
+    saveState = null
+    saveNote = ''
+    freeListOpen = false
+  }
+
+  function addFreeCell() {
+    cells = [...cells, newFreeCell(cells.length + 1)]
+    activeCell = cells.length - 1
+  }
+
+  function removeFreeCell(i) {
+    if (cells.length <= 1) return
+    cells = cells.filter((_, j) => j !== i)
+    if (activeCell >= cells.length) activeCell = cells.length - 1
+  }
+
+  // ---------- ترمینال واقعی (فاز A) ----------
+  // xterm.js + HTTP polling — وب‌سوکت از پورت فورواردشده خراب است، پس
+  // خروجی با GET /terminal/output پول می‌شود و کلیدها با POST
+  // /terminal/input فرستاده می‌شوند (زنجیرهٔ ترتیبی تا کلیدها جابه‌جا
+  // نشوند). ترمینال keepalive نیست: پول آن مهلت ۳۰ دقیقه‌ای را عقب
+  // نمی‌اندازد — فقط ۴۰۱ یعنی نشست مرده است و بنر بازیابی را نشان می‌دهد.
+  async function termPollOnce() {
+    if (!gateway || !term || !termOpen || phase !== 'ready') return
+    try {
+      const res = await gateway.terminalOutput(termOffset)
+      if (typeof res.base_offset === 'number' && res.base_offset > termOffset) {
+        term.clear()
+      }
+      if (res.output) term.write(res.output)
+      if (typeof res.next_offset === 'number') termOffset = res.next_offset
+    } catch (e) {
+      if (e instanceof StudioGatewayError && e.kind === 'unauthorized') sessionLost = true
+    }
+  }
+
+  async function openTerminal() {
+    if (!gateway || phase !== 'ready') return
+    termOpen = true
+    await tick()
+    if (!term) {
+      term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        theme: { background: '#1d1a18', foreground: '#ede6da', cursor: '#b5720a' }
+      })
+      termFit = new FitAddon()
+      term.loadAddon(termFit)
+      term.open(document.getElementById('studio-terminal'))
+      term.onData((data) => {
+        termInputChain = termInputChain
+          .then(() => gateway.terminalInput(data))
+          .catch(() => {})
+      })
+      term.onResize(({ cols, rows }) => {
+        if (gateway) void gateway.terminalResize(cols, rows).catch(() => {})
+      })
+    }
+    try {
+      termFit.fit()
+      await gateway.terminalResize(term.cols, term.rows)
+    } catch {
+      /* اندازهٔ پیش‌فرض سرور کافی است */
+    }
+    termOffset = 0
+    await termPollOnce()
+    if (termPollTimer) clearInterval(termPollTimer)
+    termPollTimer = setInterval(() => void termPollOnce(), 800)
+  }
+
+  function closeTerminal() {
+    termOpen = false
+    if (termPollTimer) {
+      clearInterval(termPollTimer)
+      termPollTimer = null
     }
   }
 
@@ -625,11 +880,11 @@
   }
 
   onMount(() => {
-    if (!lesson || !auth.canOperate) {
+    if ((!lesson && !isFreeMode) || !auth.canOperate) {
       phase = 'error'
-      errorMsg = !lesson
-        ? 'آزمایشگاهی برای این درس پیدا نشد.'
-        : 'برای ورود به استودیو نخست وارد شوید.'
+      errorMsg = !auth.canOperate
+        ? 'برای ورود به استودیو نخست وارد شوید.'
+        : 'آزمایشگاهی برای این درس پیدا نشد.'
       statusLight = 'error'
       statusLightLabel = 'خطا'
       return
@@ -644,18 +899,40 @@
       }
     }
     window.addEventListener('keydown', onKey)
+    const onResize = () => {
+      if (term && termOpen) {
+        try {
+          termFit.fit()
+        } catch {
+          /* جا دادن ترمینال شکست — اندازهٔ فعلی می‌ماند */
+        }
+      }
+    }
+    window.addEventListener('resize', onResize)
     void startFlow()
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onResize)
+    }
   })
 
   onDestroy(() => {
     if (statusTimer) clearInterval(statusTimer)
     if (wakeTimer) clearInterval(wakeTimer)
+    if (termPollTimer) clearInterval(termPollTimer)
+    if (term) {
+      try {
+        term.dispose()
+      } catch {
+        /* ترمینال در حال بسته شدن است */
+      }
+      term = null
+    }
     clearBusy('studio-wake')
     clearBusy('studio-opening')
     clearBusy('studio-cell')
     clearStudioSession()
-    if (phase === 'ready' && labCodeResolved) {
+    if (phase === 'ready') {
       void handleSave()
     }
   })
@@ -734,9 +1011,19 @@
         <img src="logo/jarvis-studio-shield-32.png" alt="" width="32" height="32" />
         <div class="leading-tight">
           <p class="font-extrabold">Jarvis Studio</p>
-          <p class="text-xs text-[var(--ink-soft)]">
-            {lesson?.lab?.title || 'استودیو'} — درس {lesson?.code || ''}
-          </p>
+          {#if isFreeMode}
+            <input
+              class="mt-0.5 w-56 rounded-lg border bg-transparent px-2 py-1 text-xs font-bold outline-none"
+              style="border-color: var(--line)"
+              bind:value={freeTitle}
+              aria-label="نام دفترچهٔ آزاد"
+              placeholder="نام دفترچهٔ آزاد"
+            />
+          {:else}
+            <p class="text-xs text-[var(--ink-soft)]">
+              {lesson?.lab?.title || 'استودیو'} — درس {lesson?.code || ''}
+            </p>
+          {/if}
         </div>
         <div class="ms-auto flex items-center gap-3">
           <span class="status-light" data-state={statusLight} title="وضعیت Gateway">
@@ -744,7 +1031,7 @@
             <span class="text-xs font-bold">{statusLightLabel}</span>
           </span>
           <button type="button" class="btn-ml-ghost !min-h-[36px] text-sm" onclick={closeStudio}>
-            بازگشت به درس
+            {isFreeMode ? 'بازگشت' : 'بازگشت به درس'}
           </button>
         </div>
       </div>
@@ -795,23 +1082,65 @@
           </div>
         {/if}
 
-        <!-- نقشهٔ رشتهٔ طلایی (تولز ۱) -->
-        <nav class="glass-card flex items-center gap-1 overflow-x-auto p-3" aria-label="نقشهٔ آزمایش">
-          {#each STAGES as stage, s}
+        {#if isFreeMode}
+          <!-- نوار دفترچهٔ آزاد (فاز A) -->
+          <div class="glass-card flex flex-wrap items-center gap-2 p-3">
+            <button type="button" class="btn-ml-ghost !min-h-[36px] text-sm" onclick={newFreeNotebook}>دفترچهٔ تازه</button>
             <button
               type="button"
-              class="thread-step"
-              data-state={stageDone[s] ? 'done' : s === activeStage ? 'active' : 'todo'}
-              onclick={() => gotoStage(s)}
+              class="btn-ml-ghost !min-h-[36px] text-sm"
+              onclick={() => {
+                freeListOpen = !freeListOpen
+                if (freeListOpen) void refreshFreeList()
+              }}
             >
-              <span class="thread-dot"></span>
-              <span class="text-xs font-bold whitespace-nowrap">{s + 1}. {stage}</span>
+              دفترچه‌ها
             </button>
-            {#if s < STAGES.length - 1}<span class="thread-line" aria-hidden="true"></span>{/if}
-          {/each}
-        </nav>
+            <button type="button" class="btn-ml-ghost !min-h-[36px] text-sm" disabled={running} onclick={addFreeCell}>سلول تازه +</button>
+            <span class="text-xs text-[var(--ink-soft)]">پایتون کامل — هر کدی بنویس و با Shift+Enter اجرا کن.</span>
+          </div>
+          {#if freeListOpen}
+            <div class="glass-card p-3">
+              <p class="text-xs font-extrabold">دفترچه‌های آزاد من</p>
+              {#if freeListLoading}
+                <p class="mt-2 text-xs text-[var(--ink-soft)]">در حال خواندن فهرست…</p>
+              {:else if freeList && freeList.length}
+                <div class="mt-2 flex flex-col gap-1">
+                  {#each freeList as item}
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 rounded-lg px-2 py-2 text-start text-sm hover:bg-black/5"
+                      onclick={() => void openFreeNotebook(item.name)}
+                    >
+                      <span class="font-bold">{item.title}</span>
+                      <span class="font-code text-[11px] text-[var(--ink-soft)]" dir="ltr">{item.name}</span>
+                    </button>
+                  {/each}
+                </div>
+              {:else}
+                <p class="mt-2 text-xs text-[var(--ink-soft)]">هنوز دفترچهٔ آزادی نساخته‌ای — همین دفترچهٔ باز با نخستین ذخیره در فهرست می‌آید.</p>
+              {/if}
+            </div>
+          {/if}
+        {:else}
+          <!-- نقشهٔ رشتهٔ طلایی (تولز ۱) -->
+          <nav class="glass-card flex items-center gap-1 overflow-x-auto p-3" aria-label="نقشهٔ آزمایش">
+            {#each STAGES as stage, s}
+              <button
+                type="button"
+                class="thread-step"
+                data-state={stageDone[s] ? 'done' : s === activeStage ? 'active' : 'todo'}
+                onclick={() => gotoStage(s)}
+              >
+                <span class="thread-dot"></span>
+                <span class="text-xs font-bold whitespace-nowrap">{s + 1}. {stage}</span>
+              </button>
+              {#if s < STAGES.length - 1}<span class="thread-line" aria-hidden="true"></span>{/if}
+            {/each}
+          </nav>
 
-        <p class="text-sm leading-8 text-[var(--ink-soft)]">{lesson?.lab?.intro || ''}</p>
+          <p class="text-sm leading-8 text-[var(--ink-soft)]">{lesson?.lab?.intro || ''}</p>
+        {/if}
 
         {#each cells as cell, i}
           <article
@@ -844,6 +1173,16 @@
               >
                 {cell.running ? 'در حال اجرا…' : 'اجرا'}
               </button>
+              {#if isFreeMode && cells.length > 1}
+                <button
+                  type="button"
+                  class="btn-ml-ghost !min-h-[44px] text-sm"
+                  disabled={running}
+                  onclick={() => removeFreeCell(i)}
+                >
+                  حذف سلول
+                </button>
+              {/if}
               {#if cell.expected}
                 <span class="text-xs text-[var(--ink-soft)]">خروجی مورد انتظار: <span dir="ltr" class="font-code">{cell.expected}</span></span>
               {/if}
@@ -873,8 +1212,23 @@
           <button type="button" class="btn-ml-ghost text-sm" disabled={running} onclick={() => void handleSave()}>
             {saveState === 'saving' ? 'در حال ذخیره…' : 'ذخیرهٔ دفترچه'}
           </button>
+          <button type="button" class="btn-ml-ghost text-sm" onclick={() => (termOpen ? closeTerminal() : void openTerminal())}>
+            {termOpen ? 'بستن ترمینال' : 'ترمینال'}
+          </button>
           {#if saveNote}<span class="text-xs text-[var(--ink-soft)]">{saveNote}</span>{/if}
         </div>
+
+        {#if termOpen}
+          <!-- ترمینال واقعی (فاز A) — xterm.js + HTTP polling -->
+          <section class="glass-card overflow-hidden">
+            <div class="flex items-center gap-2 p-3">
+              <h2 class="text-sm font-extrabold">ترمینال</h2>
+              <span class="text-xs text-[var(--ink-soft)]">شل واقعی Codespace — pip install و دستورهای شل اینجا کار می‌کنند.</span>
+              <button type="button" class="btn-ml-ghost ms-auto !min-h-[32px] px-2 text-xs" onclick={closeTerminal}>بستن</button>
+            </div>
+            <div id="studio-terminal" class="h-[300px] bg-[#1d1a18] p-2 text-left" dir="ltr"></div>
+          </section>
+        {/if}
 
         <!-- لغزندهٔ پارامتر زنده (تولز ۳) — محاسبهٔ سمت مرورگر + همگام‌سازی با سلول (R2) -->
         <section class="glass-card p-4">
@@ -1040,8 +1394,8 @@
              ذخیره، پول وضعیت) آن را عقب نمی‌اندازد. -->
         <p class="text-[11px] leading-5 text-[var(--ink-soft)]">
           بستن استودیو کرنل را خاموش نمی‌کند؛ Codespace پس از ۳۰ دقیقه بی‌فعالیتیِ ترمینال
-          خودکار خاموش می‌شود — فعالیت در این صفحه آن را بیدار نگه نمی‌دارد.
-          توقف صریح از اینجا ممکن نیست.
+          خودکار خاموش می‌شود — فعالیت در این صفحه آن را بیدار نگه نمی‌دارد، و پول
+          ترمینال هم آن را عقب نمی‌اندازد. توقف صریح از اینجا ممکن نیست.
         </p>
       </section>
     </main>
