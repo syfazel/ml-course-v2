@@ -183,7 +183,7 @@
     {/each}
   </div>
 
-  <!-- ویدیوها (یوتیوب + زیرنویس فارسی) -->
+  <!-- ویدیوها (یوتیوب) -->
   {#if unitVideos.length}
     <section class="space-y-3">
       <h2 class="text-lg font-extrabold">ویدیوهای این درس ({unitVideos.length})</h2>
@@ -196,9 +196,9 @@
           >
             <span>
               <span class="block text-sm font-extrabold leading-7">{v.title}</span>
-              <span class="block text-xs text-[var(--ink-soft)] mt-1">{v.channel} • زیرنویس فارسی</span>
+              <span class="block text-xs text-[var(--ink-soft)] mt-1">{v.channel}{v.subtitleVersion ? ' • زیرنویس فارسی' : ' • بدون زیرنویس فارسی'}</span>
             </span>
-            <span class="badge badge-sm shrink-0 mt-1">پخش با زیرنویس</span>
+            <span class="badge badge-sm shrink-0 mt-1">{v.subtitleVersion ? 'پخش با زیرنویس' : 'پخش'}</span>
           </button>
         {/each}
       </div>

@@ -190,7 +190,7 @@
   <div>
     <h2 class="text-xl font-extrabold leading-9">{video.title}</h2>
     <p class="text-xs text-[var(--ink-soft)] mt-1">
-      {video.channel} • زیرنویس فارسی {video.subtitleVersion || ''}
+      {video.channel}{video.subtitleVersion ? ` • زیرنویس فارسی ${video.subtitleVersion}` : ' • بدون زیرنویس فارسی'}
     </p>
   </div>
 
