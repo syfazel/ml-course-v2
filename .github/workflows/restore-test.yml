@@ -1,12 +1,16 @@
 # تست restore بکاپ دیتابیس Supabase پروژه ml-course-v2 (پیشنهاد ۳)
 #
-# وضعیت: ورک‌فلو آمادهٔ اجراست، ولی هنوز هیچ آرتیفکت بکاپ سبزی نیست
-# (پیشنهاد ۱ — راز SUPABASE_DB_PASSWORD + اجرای دستی ورک‌فلوی backup —
-# با یاسین است). تا وقتی بکاپ سبز نشده، این ورک‌فلو را اجرا نکن؛ ورودی
-# backup_run_id شمارهٔ اجرای سبز ورک‌فلوی backup است (تب Actions ← backup).
+# وضعیت: بکاپ سبز است (ران 45613199138، آرتیفکت ml-course-v2-db-backup).
+# ورودی backup_run_id شمارهٔ اجرای سبز ورک‌فلوی backup است
+# (تب Actions ← backup).
 #
 # روش: آرتیفکت بکاپ را دانلود می‌کند، روی یک Postgres موقت postgres:17
 # در همین رانر restore می‌کند (فقط اسکیمای public)، و ۵ چک قبولی را می‌زند.
+# پیش از restore، رول‌های مخصوص سوپابیس (anon/authenticated/service_role/
+# supabase_admin) و یک جدول stub ‏auth.users ساخته می‌شوند، چون دامپ
+# --schema=public به آن‌ها ارجاع می‌دهد (GRANTها و FKها به auth.users)
+# ولی در Postgres ساده وجود ندارند — بدون این stubها pg_restore با
+# ۵۶ خطا می‌افتد در حالی که دادهٔ public خودش سالم restore می‌شود.
 # هیچ‌چیز به دیتابیس زنده وصل نمی‌شود — صفر ریسک برای دادهٔ زنده.
 # رانر موقت است: با پایان جاب، کانتینر Postgres و فایل‌ها از بین می‌روند.
 #
@@ -68,6 +72,43 @@ jobs:
           done
           echo "test postgres did not become ready" >&2
           exit 1
+
+      - name: Create Supabase stubs (roles + auth.users)
+        env:
+          PGPASSWORD: testonly
+        run: |
+          set -euo pipefail
+          # The dump is --schema=public but references Supabase-only objects
+          # plain postgres:17 cannot resolve: GRANT / ALTER DEFAULT
+          # PRIVILEGES to roles anon/authenticated/supabase_admin, and FKs
+          # from public tables to auth.users(id). Without these stubs
+          # pg_restore fails with 56 errors (roles + schema auth missing)
+          # even though the public data itself restores fine.
+          # A fresh container per run makes CREATE ROLE safe; the DO blocks
+          # keep the step idempotent if it ever runs twice.
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:17 \
+            psql -h localhost -U postgres -d postgres \
+              -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+              CREATE ROLE anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+              CREATE ROLE authenticated NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+              CREATE ROLE service_role NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+              CREATE ROLE supabase_admin NOLOGIN;
+            END IF;
+          END $$;
+          SQL
+          echo "supabase stubs created"
 
       - name: Restore public schema only
         env:
