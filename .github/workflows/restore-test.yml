@@ -96,6 +96,10 @@ jobs:
               -v ON_ERROR_STOP=1 <<'SQL'
           CREATE SCHEMA IF NOT EXISTS auth;
           CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
+          -- RLS policies in the dump call auth.uid(); a NULL-returning stub
+          -- is enough for CREATE POLICY to validate (policies are never
+          -- evaluated during restore).
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
           DO $$ BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
               CREATE ROLE anon NOLOGIN;
@@ -112,6 +116,27 @@ jobs:
           END $$;
           SQL
           echo "supabase stubs created"
+          # Seed stub auth.users with every UUID in the dump's data so FKs
+          # to auth.users(id) validate (e.g. members.auth_id): the live auth
+          # users are not in a --schema=public dump. Extra UUIDs in the stub
+          # table are harmless (auth.users is never checked).
+          DUMP_FILE=$(ls backup/*.dump 2>/dev/null | head -n 1)
+          if [ -n "$DUMP_FILE" ]; then
+            docker run --rm -v "$PWD/backup:/backup" postgres:17 \
+              pg_restore --data-only "/backup/$(basename "$DUMP_FILE")" \
+              | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+              | sort -u \
+              | sed "s/.*/INSERT INTO auth.users (id) VALUES ('&') ON CONFLICT (id) DO NOTHING;/" \
+              > /tmp/seed_auth_users.sql
+            if [ -s /tmp/seed_auth_users.sql ]; then
+              docker run --rm -i --network host \
+                -e PGPASSWORD="$PGPASSWORD" \
+                postgres:17 \
+                psql -h localhost -U postgres -d postgres \
+                  -v ON_ERROR_STOP=1 < /tmp/seed_auth_users.sql
+              echo "seeded auth.users from dump UUIDs: $(wc -l < /tmp/seed_auth_users.sql) ids"
+            fi
+          fi
           # Verify the stubs actually landed in the test DB (visible in the
           # log): -c needs no stdin, so this cannot silently no-op.
           docker run --rm --network host \
@@ -124,6 +149,11 @@ jobs:
             postgres:17 \
             psql -h localhost -U postgres -d postgres -tAc \
               "SELECT 'auth.users table: ' || count(*) FROM pg_tables WHERE schemaname = 'auth' AND tablename = 'users'"
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:17 \
+            psql -h localhost -U postgres -d postgres -tAc \
+              "SELECT 'auth.users rows: ' || count(*) FROM auth.users"
 
       - name: Restore public schema only
         env:
