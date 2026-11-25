@@ -120,6 +120,9 @@
   let termPollTimer = null
   let termInputChain = Promise.resolve()
   let termOpen = $state(false)
+  // پیام خطای قابل‌مشاهدهٔ mount ترمینال — خرابیِ mount هرگز نباید باکس
+  // سفید و ساکت بماند (تست گرم ۲۵ نوامبر: باکس سفید، بدون اعلان، بدون خطا).
+  let termError = $state('')
 
   // کارت شیشه‌ای یک‌بارمصرف روز اول در میز — همان پرچم سایدبار، پس واقعاً یک‌بار است.
   // فقط یک پرچم راهنما در localStorage؛ هیچ نشست/توکنی اینجا ذخیره نمی‌شود.
@@ -552,6 +555,9 @@
   }
 
   // ---------- run / save ----------
+  // نکتهٔ تست گرم: stderr خطا نیست — گیت‌وی exception واقعی را در ‎out.error‎
+  // (پیام error در iopub، status=‎'error'‎) و stderr را جدا برمی‌گرداند؛
+  // اطلاع CPU تنسورفلو روی stderr می‌آید و نباید وضعیت Gateway را «خطا» کند.
   function gatewayOutcomeToOutput(out) {
     const stdout = [out.stdout || '', out.result != null ? String(out.result) : '']
       .filter(Boolean)
@@ -559,8 +565,7 @@
     let error = null
     if (out.status === 'timeout') error = 'مهلت اجرا (۱۲۰ ثانیه) تمام شد.'
     else if (out.error) error = `${out.error.ename || 'خطا'}: ${out.error.evalue || ''}`.trim()
-    else if (out.stderr) error = out.stderr
-    return { stdout, error }
+    return { stdout, error, stderr: out.stderr || '' }
   }
 
   async function runCell(i, advance = false) {
@@ -817,31 +822,66 @@
     }
   }
 
+  // ساخت/بازکردن نمونهٔ xterm در کانتینر؛ mount را راستی‌آزمایی می‌کند و
+  // یک بار تلاش دوباره می‌کند. false یعنی mount نشد (termError تنظیم می‌شود).
+  function mountTerminal() {
+    const el = document.getElementById('studio-terminal')
+    if (!el) {
+      termError = 'ترمینال باز نشد: کانتینر ترمینال پیدا نشد. صفحه را رفرش کنید.'
+      return false
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        term = new Terminal({
+          cursorBlink: true,
+          fontSize: 13,
+          theme: { background: '#1d1a18', foreground: '#ede6da', cursor: '#b5720a' }
+        })
+        termFit = new FitAddon()
+        term.loadAddon(termFit)
+        term.open(el)
+        term.onData((data) => {
+          termInputChain = termInputChain
+            .then(() => gateway.terminalInput(data))
+            .catch(() => {})
+        })
+        term.onResize(({ cols, rows }) => {
+          if (gateway) void gateway.terminalResize(cols, rows).catch(() => {})
+        })
+        // راستی‌آزمایی mount: بدون گرهٔ ‎.xterm‎ یعنی open عملاً هیچ‌چیز
+        // رندر نکرده (باکس سفیدِ تست گرم) — دوباره تلاش کن، نه سکوت.
+        if (!el.querySelector('.xterm')) throw new Error('xterm did not mount')
+        return true
+      } catch (e) {
+        try {
+          term?.dispose()
+        } catch {
+          /* نمونهٔ نیمه‌ساخته رها می‌شود */
+        }
+        term = null
+        termFit = null
+        if (attempt === 1) {
+          termError = `ترمینال باز نشد (${e?.message || 'خطای ناشناخته'}). بستن و بازکردن دوباره را امتحان کنید.`
+          return false
+        }
+      }
+    }
+    return false
+  }
+
   async function openTerminal() {
     if (!gateway || phase !== 'ready') return
+    termError = ''
     termOpen = true
     await tick()
     if (!term) {
-      term = new Terminal({
-        cursorBlink: true,
-        fontSize: 13,
-        theme: { background: '#1d1a18', foreground: '#ede6da', cursor: '#b5720a' }
-      })
-      termFit = new FitAddon()
-      term.loadAddon(termFit)
-      term.open(document.getElementById('studio-terminal'))
-      term.onData((data) => {
-        termInputChain = termInputChain
-          .then(() => gateway.terminalInput(data))
-          .catch(() => {})
-      })
-      term.onResize(({ cols, rows }) => {
-        if (gateway) void gateway.terminalResize(cols, rows).catch(() => {})
-      })
+      if (!mountTerminal()) return
     }
+    // resize را مسدودکنندهٔ اولین poll نکن: روی تونلِ زنده یک resizeِ
+    // آویخته می‌توانست اعلان شل را دقیقه‌ها عقب بیندازد.
     try {
       termFit.fit()
-      await gateway.terminalResize(term.cols, term.rows)
+      void gateway.terminalResize(term.cols, term.rows).catch(() => {})
     } catch {
       /* اندازهٔ پیش‌فرض سرور کافی است */
     }
@@ -849,13 +889,33 @@
     await termPollOnce()
     if (termPollTimer) clearInterval(termPollTimer)
     termPollTimer = setInterval(() => void termPollOnce(), 800)
+    // ترمینال پایینِ ستون است؛ بدون اسکرول، کاربر بازشدنِ آن را نمی‌بیند.
+    try {
+      document.getElementById('studio-terminal')?.scrollIntoView({ block: 'nearest' })
+      term?.focus()
+    } catch {
+      /* اسکرول/فوکاس اختیاری است */
+    }
   }
 
   function closeTerminal() {
     termOpen = false
+    termError = ''
     if (termPollTimer) {
       clearInterval(termPollTimer)
       termPollTimer = null
+    }
+    // نکتهٔ اصلیِ باگ تست گرم: بستن فقط تایمر را پاک می‌کرد و نمونهٔ
+    // xterm را زنده نگه می‌داشت؛ ‎{#if termOpen}‎ کانتینر را از DOM برمی‌داشت
+    // و بازکردنِ دوباره ‎term.open()‎ را رد می‌کرد — باکس خالی می‌ماند.
+    if (term) {
+      try {
+        term.dispose()
+      } catch {
+        /* ترمینال در حال بسته شدن است */
+      }
+      term = null
+      termFit = null
     }
   }
 
@@ -1197,6 +1257,9 @@
                 {#if cell.output.stdout}
                   <pre dir="ltr" class="whitespace-pre-wrap rounded-xl bg-[#1d1a18] p-3 text-left text-xs leading-6 text-[#f5efe6]">{cell.output.stdout}</pre>
                 {/if}
+                {#if cell.output.stderr}
+                  <p dir="ltr" class="mt-2 whitespace-pre-wrap rounded-xl px-3 py-2 text-left text-xs leading-6 text-[var(--ink-soft)]">stderr: {cell.output.stderr}</p>
+                {/if}
                 {#if cell.output.error}
                   <p class="mt-2 rounded-xl px-3 py-2 text-xs leading-6" style="background: rgba(181,114,10,.1); color: var(--saffron-text)">{cell.output.error}</p>
                 {/if}
@@ -1226,6 +1289,9 @@
               <span class="text-xs text-[var(--ink-soft)]">شل واقعی Codespace — pip install و دستورهای شل اینجا کار می‌کنند.</span>
               <button type="button" class="btn-ml-ghost ms-auto !min-h-[32px] px-2 text-xs" onclick={closeTerminal}>بستن</button>
             </div>
+            {#if termError}
+              <p class="px-3 pb-2 text-xs leading-6" style="color: var(--saffron-text)">{termError}</p>
+            {/if}
             <div id="studio-terminal" class="h-[300px] bg-[#1d1a18] p-2 text-left" dir="ltr"></div>
           </section>
         {/if}
@@ -1374,6 +1440,9 @@
                     <p class="mb-1 text-xs font-bold">{cell.title}</p>
                     {#if cell.output.stdout}
                       <pre dir="ltr" class="whitespace-pre-wrap rounded-xl bg-[#1d1a18] p-3 text-left text-xs leading-6 text-[#f5efe6]">{cell.output.stdout}</pre>
+                    {/if}
+                    {#if cell.output.stderr}
+                      <p dir="ltr" class="mt-1 whitespace-pre-wrap rounded-xl px-3 py-2 text-left text-xs leading-6 text-[var(--ink-soft)]">stderr: {cell.output.stderr}</p>
                     {/if}
                     {#if cell.output.error}
                       <p class="mt-1 rounded-xl px-3 py-2 text-xs leading-6" style="background: rgba(181,114,10,.1); color: var(--saffron-text)">{cell.output.error}</p>
