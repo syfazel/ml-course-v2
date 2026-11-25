@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte'
   import { auth } from '../lib/auth-store.svelte.js'
   import { isSupabaseConfigured } from '../lib/supabase.js'
   import {
@@ -44,6 +45,36 @@
     if (!videoEl) return
     if (paused) videoEl.pause()
     else videoEl.play().catch(() => {})
+  }
+
+  // دروازهٔ ورود — افتتاحیهٔ تاییدشده (v3) پیش از صفحهٔ ورود (تیک یاسین ۲۵ نوامبر ~۱۳:۱۶):
+  // اول صفحهٔ «برای ورود ضربه بزن»؛ همان ضربه ویدیو را با صدا پخش می‌کند و
+  // بعد از تمام‌شدن ویدیو فرم ورود می‌آید. در reduced-motion و در مسیر
+  // بازیابی رمز، دروازه اصلاً نشان داده نمی‌شود. اگر ویدیو خطا بدهد یا
+  // ظرف ۲۰ ثانیه تمام نشود، دروازه رد می‌شود تا کاربر هیچ‌وقت گیر نکند.
+  let entryVideoEl = $state(null)
+  let entryWatchdog = null
+  const skipEntry = reducedMotion || auth.recoveryMode || router.path === '/reset-password'
+  let entryState = $state(skipEntry ? 'done' : 'splash') // 'splash' | 'playing' | 'done'
+  const entryActive = $derived(entryState !== 'done')
+
+  async function startEntry() {
+    entryState = 'playing'
+    await tick()
+    entryWatchdog = setTimeout(() => {
+      if (entryState === 'playing') entryState = 'done'
+    }, 20000)
+    try {
+      await entryVideoEl?.play()
+    } catch {
+      clearTimeout(entryWatchdog)
+      entryState = 'done'
+    }
+  }
+
+  function finishEntry() {
+    clearTimeout(entryWatchdog)
+    entryState = 'done'
   }
 
   async function handleLogin(e) {
@@ -141,6 +172,40 @@
 </script>
 
 <div class="teaser-root">
+  <!-- دروازهٔ ورود — افتتاحیهٔ تاییدشده پیش از صفحهٔ ورود -->
+  {#if entryActive}
+    <div
+      class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 text-center text-[#f7f1e3]"
+      style="background-image: linear-gradient(rgba(20,16,12,0.78), rgba(20,16,12,0.92)), url('covers/cover-hero.jpg'); background-size: cover; background-position: center;"
+    >
+      {#if entryState === 'splash'}
+        <img
+          src="logo/logo-mark-inverse.svg"
+          alt=""
+          aria-hidden="true"
+          class="w-16 h-auto"
+        />
+        <div class="space-y-1">
+          <h1 class="text-2xl font-extrabold">دورهٔ یادگیری ماشین</h1>
+          <p class="text-sm opacity-80">افتتاحیهٔ ۱۰ ثانیه‌ای — با صدا پخش می‌شود</p>
+        </div>
+        <button type="button" class="btn-ml-primary text-base px-8 py-3" onclick={startEntry}>
+          ▶ برای ورود ضربه بزن
+        </button>
+      {:else}
+        <video
+          bind:this={entryVideoEl}
+          class="absolute inset-0 w-full h-full object-cover"
+          src="covers/video-opening-site-entry-v3.mp4"
+          playsinline
+          preload="auto"
+          onended={finishEntry}
+          onerror={finishEntry}
+          aria-label="افتتاحیهٔ ورود به دورهٔ یادگیری ماشین"
+        ></video>
+      {/if}
+    </div>
+  {/if}
   <!-- لایهٔ ۰ — پوستر ثابت (زیر ویدیو؛ در reduced-motion و پیش از پخش هم همین دیده می‌شود) -->
   <img
     src="covers/cover-hero.jpg"
