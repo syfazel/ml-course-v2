@@ -37,7 +37,7 @@ jobs:
           docker run --rm \
             -e PGPASSWORD="$PGPASSWORD" \
             -v "$PWD/backup:/backup" \
-            postgres:16 \
+            postgres:17 \
             pg_dump \
               -h aws-1-eu-central-1.pooler.supabase.com -p 5432 \
               -U postgres.awznimzcsmpaadvqwodg -d postgres \
@@ -48,7 +48,7 @@ jobs:
           DUMP_FILE=$(ls backup/*.dump | head -n 1)
           docker run --rm \
             -v "$PWD/backup:/backup" \
-            postgres:16 \
+            postgres:17 \
             pg_restore -l "/backup/$(basename "$DUMP_FILE")" > /dev/null
           echo "dump archive header OK"
       - name: Upload dump as artifact (30 days)

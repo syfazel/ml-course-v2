@@ -5,7 +5,7 @@
 # با یاسین است). تا وقتی بکاپ سبز نشده، این ورک‌فلو را اجرا نکن؛ ورودی
 # backup_run_id شمارهٔ اجرای سبز ورک‌فلوی backup است (تب Actions ← backup).
 #
-# روش: آرتیفکت بکاپ را دانلود می‌کند، روی یک Postgres موقت postgres:16
+# روش: آرتیفکت بکاپ را دانلود می‌کند، روی یک Postgres موقت postgres:17
 # در همین رانر restore می‌کند (فقط اسکیمای public)، و ۵ چک قبولی را می‌زند.
 # هیچ‌چیز به دیتابیس زنده وصل نمی‌شود — صفر ریسک برای دادهٔ زنده.
 # رانر موقت است: با پایان جاب، کانتینر Postgres و فایل‌ها از بین می‌روند.
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_PASSWORD: testonly
           POSTGRES_DB: postgres
@@ -54,12 +54,12 @@ jobs:
       - name: Wait for test Postgres
         run: |
           set -euo pipefail
-          # Client tools come from the same postgres:16 image the backup
+          # Client tools come from the same postgres:17 image the backup
           # workflow uses — no reliance on runner-installed psql.
           # --network host: the service container is reachable on
           # localhost:5432 through its mapped port.
           for i in $(seq 1 30); do
-            if docker run --rm --network host postgres:16 \
+            if docker run --rm --network host postgres:17 \
               pg_isready -h localhost -p 5432 -U postgres; then
               echo "test postgres ready"
               exit 0
@@ -87,11 +87,11 @@ jobs:
           # --schema=public: the dump covers the whole `postgres` database
           # and includes Supabase internal schemas (auth/storage) that need
           # Supabase-only extensions (e.g. pgjwt) absent from plain
-          # postgres:16. --no-owner: owner names differ on a fresh instance.
+          # postgres:17. --no-owner: owner names differ on a fresh instance.
           docker run --rm --network host \
             -e PGPASSWORD="$PGPASSWORD" \
             -v "$PWD/backup:/backup" \
-            postgres:16 \
+            postgres:17 \
             pg_restore --schema=public --no-owner \
               -h localhost -U postgres -d postgres "/backup/$(basename "$DUMP_FILE")"
           echo "pg_restore done"
@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           docker run --rm --network host \
             -e PGPASSWORD="$PGPASSWORD" \
-            postgres:16 \
+            postgres:17 \
             psql -h localhost -U postgres -d postgres \
               -v ON_ERROR_STOP=1 <<'SQL'
           DO $$
