@@ -148,9 +148,7 @@
     aria-hidden="true"
     class="teaser-base"
   />
-  <!-- لایهٔ ۱ — تیزر v3 لوگوی M، تمام‌صفحه (از ۲۵ نوامبر ۲۰۲۶، به‌جای
-       ویدیوی Veo: تیزر آرم باید موقع بازکردن سایت دیده شود؛ فایل Veo
-       در public می‌ماند و حذف نشده است) -->
+  <!-- لایهٔ ۱ — ویدیوی Veo تمام‌صفحه (حلقه ۱۰ ثانیه‌ای؛ درز حلقه اندازه‌گیری شد: تفاوت فریم اول و آخر ۲٫۴۱ از ۲۵۵ — بدون درز، پس محو لازم نیست) -->
   <video
     bind:this={videoEl}
     class="teaser-video"
@@ -159,9 +157,9 @@
     loop
     playsinline
     preload="metadata"
-    poster="studio-opening/video-teaser-logo-v3-poster.jpg"
+    poster="covers/cover-hero.jpg"
   >
-    <source src="studio-opening/video-teaser-logo-v3.mp4" type="video/mp4" />
+    <source src="covers/video-entry-veo-v1.mp4" type="video/mp4" />
     مرورگر شما ویدیو را پخش نمی‌کند.
   </video>
   <!-- لایهٔ ۲ — شبکهٔ طلایی Three.js (لِیزی؛ فقط وقتی حرکت مجاز است) -->

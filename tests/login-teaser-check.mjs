@@ -1,12 +1,12 @@
-// Login teaser check — تیزر v3 روی صفحهٔ ورود (۲۵ نوامبر ۲۰۲۶).
+// Login teaser check — ویدیوی Veo پس‌زمینهٔ صفحهٔ ورود (۲۵ نوامبر ۲۰۲۶).
 // بدون حساب واقعی، بدون رمز واقعی، بدون شبکهٔ واقعی: پیش‌نمایش محلی
 // dist + کروم headless از راه CDP (همان الگوی tests/auth-login-checks.mjs).
 //
-//   T1: ویدیوی پس‌زمینهٔ ورود، تیزر v3 است (src + poster).
+//   T1: ویدیوی پس‌زمینهٔ ورود، ویدیوی Veo است (src + poster).
 //   T2: ویژگی‌ها سر جایشان‌اند: muted، loop، playsinline، preload=metadata، autoplay.
 //   T3: ویدیو در حال پخش است و currentTime جلو می‌رود (نه فریم صفر).
 //   T4: دکمهٔ «توقف حرکت» ویدیو را pause و دوباره play می‌کند.
-//   T5: هیچ ارجاعی به ویدیوی Veo در صفحهٔ ورود نیست.
+//   T5: هیچ ارجاعی به تیزر v3 در صفحهٔ ورود نیست.
 //   T6: با prefers-reduced-motion: reduce ویدیو autoplay نمی‌شود و
 //       دکمهٔ توقف حرکت رندر نمی‌شود (رفتار reduced-motion حفظ شده).
 //   T7: کارت ورود سر جایش است و version.json هشِ همین کامیت را می‌گوید.
@@ -124,7 +124,7 @@ try {
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
 
-  // ===== بارگذاری معمولی: تیزر v3 پس‌زمینه است و پخش می‌شود =====
+  // ===== بارگذاری معمولی: ویدیوی Veo پس‌زمینه است و پخش می‌شود =====
   await send('Page.navigate', { url: ORIGIN + '/#/login' });
   await sleep(1500);
   await evalJs(`localStorage.clear()`);
@@ -134,8 +134,8 @@ try {
 
   const v1 = await videoState();
   check('T1a: background video element exists', v1 !== null);
-  check('T1b: video src is the v3 teaser', typeof v1?.src === 'string' && v1.src.includes('video-teaser-logo-v3.mp4'), v1?.src || 'no-src');
-  check('T1c: video poster is the v3 poster', typeof v1?.poster === 'string' && v1.poster.includes('video-teaser-logo-v3-poster.jpg'), v1?.poster || 'no-poster');
+  check('T1b: video src is the Veo entry video', typeof v1?.src === 'string' && v1.src.includes('video-entry-veo-v1.mp4'), v1?.src || 'no-src');
+  check('T1c: video poster is cover-hero', typeof v1?.poster === 'string' && v1.poster.includes('covers/cover-hero.jpg'), v1?.poster || 'no-poster');
   check('T2: muted + loop + playsinline + preload=metadata + autoplay', v1?.muted === true && v1?.loop === true && v1?.playsInline === true && v1?.preload === 'metadata' && v1?.autoplayAttr === true);
 
   const t0 = v1?.currentTime;
@@ -155,7 +155,7 @@ try {
   check('T4d: video playing again after second toggle', v4?.paused === false, `paused=${v4?.paused}`);
 
   const pageHtml = await evalJs(`document.documentElement.outerHTML`);
-  check('T5: no Veo video reference on the login page', typeof pageHtml === 'string' && !pageHtml.includes('video-entry-veo-v1'));
+  check('T5: no v3 teaser reference on the login page', typeof pageHtml === 'string' && !pageHtml.includes('video-teaser-logo-v3'));
 
   // ===== reduced-motion: ویدیو autoplay نمی‌شود، دکمه نیست =====
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
