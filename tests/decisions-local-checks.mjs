@@ -293,6 +293,24 @@ try {
     }
     await send('Page.reload', { ignoreCache: true });
     await sleep(1200);
+    await passEntryGate();
+  };
+
+  // دروازهٔ ورود (۲۵ نوامبر ۲۰۲۶): اگر اسپلش «برای ورود ضربه بزن» هست،
+  // آن را می‌زنیم و ویدیو را تا نزدیک پایان جلو می‌بریم تا 'ended' همان‌جا
+  // بخورد (شتاب تست؛ رفتار واقعی همان پخش کامل ۱۰ ثانیه‌ای است).
+  const passEntryGate = async () => {
+    if (!(await hasText('برای ورود ضربه بزن'))) return true;
+    const clicked = await clickButton('برای ورود ضربه بزن');
+    if (!clicked) return false;
+    const ff = await waitFor(async () => await evalJs(`(() => {
+      const v = document.querySelector('video[src*="video-opening-site-entry-v3"]');
+      if (!v || !isFinite(v.duration) || v.duration <= 1) return false;
+      v.currentTime = v.duration - 0.3;
+      return true;
+    })()`), 5000);
+    if (!ff) return false;
+    return await waitFor(async () => await hasText('ورود به دوره'), 8000);
   };
 
   // ===== B1: boot mark visible while the bundle is blocked (pre-mount) =====

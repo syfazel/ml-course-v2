@@ -165,6 +165,28 @@ try {
   const bodyText = () => evalJs(`document.body ? document.body.innerText : ''`);
   const hasText = async (s) => (await bodyText())?.includes(s);
 
+  // دروازهٔ ورود (۲۵ نوامبر ۲۰۲۶): اگر اسپلش «برای ورود ضربه بزن» هست،
+  // آن را می‌زنیم و ویدیو را تا نزدیک پایان جلو می‌بریم تا 'ended' همان‌جا
+  // بخورد (شتاب تست؛ رفتار واقعی همان پخش کامل ۱۰ ثانیه‌ای است).
+  const passEntryGate = async () => {
+    if (!(await hasText('برای ورود ضربه بزن'))) return true;
+    const clicked = await evalJs(`(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('برای ورود ضربه بزن'));
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    const ff = await waitFor(async () => await evalJs(`(() => {
+      const v = document.querySelector('video[src*="video-opening-site-entry-v3"]');
+      if (!v || !isFinite(v.duration) || v.duration <= 1) return false;
+      v.currentTime = v.duration - 0.3;
+      return true;
+    })()`), 5000);
+    if (!ff) return false;
+    return await waitFor(async () => await hasText('ورود به دوره'), 8000);
+  };
+
   // version.json روی دیسک با هش بیلد می‌خواند
   const served = await (await fetch(ORIGIN + '/version.json')).json();
   check('smoke: version.json هش dist را دارد', served.hash === headHash, `served=${served.hash} dist=${headHash}`);
@@ -178,10 +200,12 @@ try {
   await sleep(1500);
   await evalJs(`localStorage.clear()`);
   await send('Page.reload', { ignoreCache: true });
+  await passEntryGate();
   let mounted = await waitFor(async () => await hasText('ورود به دوره'), 10000);
   let errs = await pageErrors();
   check('smoke: خانه بالا می‌آید', mounted && errs.length === 0, mounted ? errs.join(' | ') : 'نشانگر دیده نشد');
   await send('Page.navigate', { url: ORIGIN + '/#/login' });
+  await passEntryGate();
   mounted = await waitFor(async () => await hasText('ورود به دوره'), 10000);
   errs = await pageErrors();
   check('smoke: صفحهٔ ورود بالا می‌آید', mounted && errs.length === 0, mounted ? errs.join(' | ') : 'نشانگر دیده نشد');

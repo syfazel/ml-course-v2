@@ -191,6 +191,29 @@ try {
     }
     await send('Page.reload', { ignoreCache: true });
     await sleep(1500);
+    await passEntryGate();
+  };
+
+  // دروازهٔ ورود (۲۵ نوامبر ۲۰۲۶): اگر اسپلش «برای ورود ضربه بزن» هست،
+  // آن را می‌زنیم و ویدیو را تا نزدیک پایان جلو می‌بریم تا 'ended' همان‌جا
+  // بخورد (شتاب تست؛ رفتار واقعی همان پخش کامل ۱۰ ثانیه‌ای است).
+  const passEntryGate = async () => {
+    if (!(await hasText('برای ورود ضربه بزن'))) return true;
+    const clicked = await evalJs(`(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('برای ورود ضربه بزن'));
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clicked) return false;
+    const ff = await waitFor(async () => await evalJs(`(() => {
+      const v = document.querySelector('video[src*="video-opening-site-entry-v3"]');
+      if (!v || !isFinite(v.duration) || v.duration <= 1) return false;
+      v.currentTime = v.duration - 0.3;
+      return true;
+    })()`), 5000);
+    if (!ff) return false;
+    return await waitFor(async () => await hasText('ورود به دوره'), 8000);
   };
 
   // ===== 1. R1 دوباره: افتتاحیه سالم =====
@@ -229,9 +252,10 @@ try {
     check(`390px: ${label} محتوا دارد`, typeof len === 'number' && len > 100, `chars=${len}`);
     if (extra) check(`390px: ${label} واقعاً همان صفحه است`, await hasText(extra), `باید «${extra}» دیده شود`);
   };
-  // بدون نشست: صفحهٔ ورود
+  // بدون نشست: صفحهٔ ورود (اول از دروازهٔ ورود رد می‌شویم)
   await go('#/login');
   await sleep(2500);
+  await passEntryGate();
   await check390('ورود (بدون نشست)', 'ورود به دوره');
   // با نشست ساختگی: خانهٔ واقعی + صفحهٔ وضعیت واقعی
   await seedAndLoad('#/', { 'ml-course-v2-auth': fakeSessionJSON(3600) });
