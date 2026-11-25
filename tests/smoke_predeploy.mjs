@@ -297,6 +297,11 @@ try {
   // اسکرول را به بالا برگرداند تا پخش‌کنندهٔ افتتاحیه توی دید باشد.
   // مسیر واقعی را تکرار می‌کنیم: درس ۱-ب → اسکرول به پایین → هشِ درون‌صفحه‌ای
   // به ویدیو (نه Page.navigate که صفحه را تازه می‌کند و scrollY را صفر می‌کند).
+  // چک در viewport دسکتاپ (۱۲۸۰×۸۰۰) انجام می‌شود — همان‌جایی که باگ در
+  // تست گرم دیده شد؛ در عرض‌های باریک، سایدبار بالای محتوا می‌نشیند و
+  // پخش‌کننده حتی با scrollY=0 هم پایینِ تاست (رفتار جداگانهٔ چیدمان موبایل،
+  // نه این باگ).
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: ORIGIN + '/#/lesson/2' });
   await sleep(1200);
   await evalJs(`localStorage.clear()`);
@@ -314,6 +319,7 @@ try {
     return { y: Math.round(window.scrollY), top: Math.round(r.top), vh: window.innerHeight };
   })()`) : null;
   const errs3 = await pageErrors();
+  await send('Emulation.clearDeviceMetricsOverride', {});
   check('smoke: صفحهٔ ویدیو از پایینِ درس هم با افتتاحیهٔ توی دید باز می‌شود', !!st && scrolledDown && st.y <= 10 && st.top >= 0 && st.top < st.vh && errs3.length === 0, st ? `scrollY=${st.y} playerTop=${st.top} vh=${st.vh}${errs3.length ? ' | ' + errs3.join(' | ') : ''}` : (scrolledDown ? 'پیش‌پخش دیده نشد' : 'درس mount نشد یا اسکرول نخورد'));
 
   console.log(`\n==== ${results.filter((r) => r.ok).length}/${results.length} smoke checks passed ====`);
