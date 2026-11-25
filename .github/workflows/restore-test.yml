@@ -123,7 +123,7 @@ jobs:
           DUMP_FILE=$(ls backup/*.dump 2>/dev/null | head -n 1)
           if [ -n "$DUMP_FILE" ]; then
             docker run --rm -v "$PWD/backup:/backup" postgres:17 \
-              pg_restore --data-only "/backup/$(basename "$DUMP_FILE")" \
+              pg_restore -f - --data-only "/backup/$(basename "$DUMP_FILE")" \
               | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
               | sort -u \
               | sed "s/.*/INSERT INTO auth.users (id) VALUES ('&') ON CONFLICT (id) DO NOTHING;/" \
