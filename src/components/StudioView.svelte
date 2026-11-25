@@ -808,17 +808,47 @@
   // /terminal/input فرستاده می‌شوند (زنجیرهٔ ترتیبی تا کلیدها جابه‌جا
   // نشوند). ترمینال keepalive نیست: پول آن مهلت ۳۰ دقیقه‌ای را عقب
   // نمی‌اندازد — فقط ۴۰۱ یعنی نشست مرده است و بنر بازیابی را نشان می‌دهد.
-  async function termPollOnce() {
+  // گیت‌وی قدیمی اندپوینت ترمینال را ندارد: FastAPI برای مسیر ثبت‌نشده
+  // 404 با بدنهٔ {"detail":"Not Found"} می‌دهد و gatewayFetch آن را به‌صورت
+  // `GET /terminal/output?... -> 404` در detail خطا می‌گذارد. 404 قطعی
+  // است (نه قطعیِ گذرا)، پس ترمینالِ مرده را بی‌صدا پول نکن — پیام
+  // صادقانه بده. (درس ۲۵ نوامبر: گیت‌وی زندهٔ قدیمی /terminal/* را 404
+  // می‌داد و ترمینال بی‌صدا خالی می‌ماند، چون poll خطا را قورت می‌داد.)
+  const TERM_STALE_MSG =
+    'گیت‌وی استودیو نسخهٔ ترمینال را ندارد (کداسپیس قدیمی است) — ترمینال تا به‌روزرسانی گیت‌وی کار نمی‌کند. دفترچه و سلول‌ها سالم‌اند.'
+  function isTerminalNotFound(e) {
+    return (
+      e instanceof StudioGatewayError &&
+      e.kind === 'gateway' &&
+      typeof e.detail === 'string' &&
+      e.detail.includes('-> 404')
+    )
+  }
+
+  async function termPollOnceRaw() {
     if (!gateway || !term || !termOpen || phase !== 'ready') return
+    const res = await gateway.terminalOutput(termOffset)
+    if (typeof res.base_offset === 'number' && res.base_offset > termOffset) {
+      term.clear()
+    }
+    if (res.output) term.write(res.output)
+    if (typeof res.next_offset === 'number') termOffset = res.next_offset
+  }
+
+  async function termPollOnce() {
     try {
-      const res = await gateway.terminalOutput(termOffset)
-      if (typeof res.base_offset === 'number' && res.base_offset > termOffset) {
-        term.clear()
-      }
-      if (res.output) term.write(res.output)
-      if (typeof res.next_offset === 'number') termOffset = res.next_offset
+      await termPollOnceRaw()
     } catch (e) {
       if (e instanceof StudioGatewayError && e.kind === 'unauthorized') sessionLost = true
+      else if (isTerminalNotFound(e)) {
+        // گیت‌وی وسط نشست عوض شده (یا probe جا مانده): پولِ مرده را
+        // متوقف کن و پیام صادقانه بده، نه سکوت.
+        if (termPollTimer) {
+          clearInterval(termPollTimer)
+          termPollTimer = null
+        }
+        termError = TERM_STALE_MSG
+      }
     }
   }
 
@@ -886,7 +916,30 @@
       /* اندازهٔ پیش‌فرض سرور کافی است */
     }
     termOffset = 0
-    await termPollOnce()
+    // وارسیِ قابلیت ترمینال (probe): اولین poll هم‌زمان می‌سنجد گیت‌وی
+    // اصلاً اندپوینت ترمینال را دارد یا نه. اگر 404 گرفتیم، ترمینالِ
+    // مرده را باز نکن و پول را شروع نکن — نمونه را dispose کن تا تایپ
+    // در باکس خالی هم بی‌اثر نماند، و پیام صادقانه را در خود پنل بده.
+    // خطای دیگر (قطعیِ گذرا): مثل قبل پولِ دوره‌ای شروع می‌شود و خودش
+    // را بازیابی می‌کند.
+    let staleGateway = false
+    try {
+      await termPollOnceRaw()
+    } catch (e) {
+      if (e instanceof StudioGatewayError && e.kind === 'unauthorized') sessionLost = true
+      else if (isTerminalNotFound(e)) staleGateway = true
+    }
+    if (staleGateway) {
+      termError = TERM_STALE_MSG
+      try {
+        term?.dispose()
+      } catch {
+        /* نمونهٔ نیمه‌ساخته رها می‌شود */
+      }
+      term = null
+      termFit = null
+      return
+    }
     if (termPollTimer) clearInterval(termPollTimer)
     termPollTimer = setInterval(() => void termPollOnce(), 800)
     // ترمینال پایینِ ستون است؛ بدون اسکرول، کاربر بازشدنِ آن را نمی‌بیند.
