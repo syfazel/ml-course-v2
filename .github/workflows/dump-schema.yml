@@ -1,0 +1,62 @@
+# گرفتن اسکیمای زندهٔ دیتابیس Supabase پروژه ml-course-v2 (پیشنهاد ۴)
+#
+# وضعیت: ورک‌فلو آمادهٔ اجراست ولی هنوز اجرا نشده؛ راز
+# SUPABASE_DB_PASSWORD در ریپو تنظیم شده است.
+#
+# روش: با workflow_dispatch دستی اجرا می‌شود؛ pg_dump با postgres:17 از
+# session pooler ‏(aws-1، پورت 5432) فقط اسکیما را می‌گیرد
+# (--schema-only --no-owner --schema=public) و supabase/schema.sql را
+# به‌عنوان آرتیفکت آپلود می‌کند. بعد میوز آرتیفکت را دانلود می‌کند،
+# محتوایش را بررسی می‌کند (۱۲ جدول، ۲ تابع، بدون داده) و در ریپو کامیت
+# می‌کند. هیچ‌چیز به دیتابیس زنده نوشته نمی‌شود — فقط خواندن اسکیما.
+#
+# چرا postgres:17: سرور سوپابیس PostgreSQL ‏17.12 است و pg_dump ‏16 با
+# «server version mismatch» رد می‌شود (تجربهٔ بکاپ، ۲۵ نوامبر).
+# چرا session pooler ‏(5432): مثل backup.yml — ‏pg_dump به یک نشست
+# کامل نیاز دارد؛ transaction pooler ‏(6543) پروتکل COPY آن را می‌شکند.
+name: dump-schema
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  dump-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - name: pg_dump schema only
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "$PGPASSWORD" ]; then
+            echo "SUPABASE_DB_PASSWORD is not set — see the header of this workflow file." >&2
+            exit 1
+          fi
+          mkdir -p supabase
+          docker run --rm \
+            -e PGPASSWORD="$PGPASSWORD" \
+            -v "$PWD/supabase:/supabase" \
+            postgres:17 \
+            pg_dump \
+              -h aws-1-eu-central-1.pooler.supabase.com -p 5432 \
+              -U postgres.awznimzcsmpaadvqwodg -d postgres \
+              --schema-only --no-owner --schema=public \
+              -f /supabase/schema.sql
+          ls -la supabase/
+          # Sanity guards: schema-only output must contain no COPY data,
+          # and must contain CREATE TABLE statements.
+          if grep -q '^COPY ' supabase/schema.sql; then
+            echo "schema.sql unexpectedly contains COPY data — refusing to upload" >&2
+            exit 1
+          fi
+          N_TABLES=$(grep -c '^CREATE TABLE' supabase/schema.sql || true)
+          echo "CREATE TABLE statements: $N_TABLES"
+          if [ "$N_TABLES" -eq 0 ]; then
+            echo "schema.sql contains no CREATE TABLE — refusing to upload" >&2
+            exit 1
+          fi
+      - name: Upload schema.sql as artifact (30 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-course-v2-schema
+          path: supabase/schema.sql
+          retention-days: 30
