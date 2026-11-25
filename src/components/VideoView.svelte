@@ -12,6 +12,18 @@
   let currentTime = $state(0)
   let pollTimer = null
 
+  // پیش‌پخش درس (تیک یاسین ۲۵ نوامبر ~۱۶:۳۴): پیش از هر ویدیوی درس، همان
+  // افتتاحیهٔ تاییدشدهٔ v3 پخش می‌شود (با صدا، به اندازهٔ پخش‌کننده) — هر بار،
+  // بدون سرکوب «یک بار در هر نشست» (VideoView با {#key} برای هر ویدیو remount
+  // می‌شود، پس onMount هر ویدیو تازه است). با پایان ویدیو، رد کردن، خطا یا
+  // تایم‌اوت ۲۰ ثانیه‌ای (مثل fallback دروازهٔ ورود) پیش‌پخش پنهان و یوتیوب
+  // می‌آید. اگر مرورگر پخش خودکار با صدا را رد کند، دکمهٔ «پخش افتتاحیه»
+  // نشان داده می‌شود — نه ردِ بی‌صدا.
+  let prerollVideoEl = $state(null)
+  let showPreroll = $state(true)
+  let prerollNeedsTap = $state(false)
+  let prerollWatchdog = null
+
   let apiPromise = null
   function loadApi() {
     if (apiPromise) return apiPromise
@@ -65,7 +77,26 @@
     }
   }
 
-  onMount(async () => {
+  async function startPrerollPlayback() {
+    prerollNeedsTap = false
+    try {
+      await prerollVideoEl?.play()
+    } catch {
+      // پخش خودکار با صدا رد شد (بدون gesture تازه) — دکمهٔ ضربه نشان داده می‌شود.
+      prerollNeedsTap = true
+    }
+  }
+
+  function finishPreroll() {
+    if (!showPreroll) return
+    clearTimeout(prerollWatchdog)
+    prerollWatchdog = null
+    showPreroll = false
+    prerollNeedsTap = false
+    startYouTube()
+  }
+
+  async function startYouTube() {
     try {
       const YT = await loadApi()
       apiReady = true
@@ -90,9 +121,18 @@
     } catch {
       apiFailed = true
     }
+  }
+
+  onMount(() => {
+    // اول پیش‌پخش با صدا؛ API یوتیوب موازی لود می‌شود تا بعد از پیش‌پخش
+    // بی‌درنگ پخش‌کننده ساخته شود.
+    prerollWatchdog = setTimeout(() => finishPreroll(), 20000)
+    loadApi().catch(() => {})
+    startPrerollPlayback()
   })
 
   onDestroy(() => {
+    if (prerollWatchdog) clearTimeout(prerollWatchdog)
     if (pollTimer) clearInterval(pollTimer)
     try {
       player?.destroy()
@@ -113,6 +153,36 @@
 
   <div class="relative w-full overflow-hidden rounded-2xl border border-[var(--glass-border)] bg-black" style="aspect-ratio: 16 / 9;">
     <div bind:this={playerEl} class="absolute inset-0 w-full h-full"></div>
+    {#if showPreroll}
+      <video
+        bind:this={prerollVideoEl}
+        class="absolute inset-0 z-20 w-full h-full object-cover bg-black"
+        src="covers/video-opening-site-entry-v3.mp4"
+        playsinline
+        preload="auto"
+        onended={finishPreroll}
+        onerror={finishPreroll}
+        aria-label="افتتاحیهٔ درس"
+      ></video>
+      {#if prerollNeedsTap}
+        <button
+          type="button"
+          class="absolute inset-0 z-30 flex items-center justify-center bg-black/60 text-[#f7f1e3] text-lg font-extrabold cursor-pointer"
+          onclick={startPrerollPlayback}
+          aria-label="پخش افتتاحیه"
+        >
+          ▶ پخش افتتاحیه
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="absolute z-40 bottom-3 left-3 rounded-full bg-black/70 px-4 py-1.5 text-sm font-bold text-white cursor-pointer"
+        onclick={finishPreroll}
+        aria-label="رد کردن افتتاحیه"
+      >
+        رد کردن
+      </button>
+    {/if}
     {#if currentCue}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-3 pt-8 text-center"

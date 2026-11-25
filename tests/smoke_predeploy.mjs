@@ -65,6 +65,9 @@ const chrome = spawn(CHROME, [
   '--headless=new', `--remote-debugging-port=${CDP_PORT}`, '--no-sandbox',
   '--disable-dev-shm-usage', '--user-data-dir=/tmp/chrome-profile-phase5-smoke',
   '--ignore-certificate-errors',
+  // پخش خودکار با صدا: پیش‌پخش درس و ویدیوی دروازه در تست واقعاً پخش شوند
+  // (بدون gesture، play() رد می‌شود و مسیر ended تست نمی‌خورد).
+  '--autoplay-policy=no-user-gesture-required',
   // SwiftShader: بدون GPU هم WebGL در دسترس باشد — وگرنه GoldenNetwork
   // خانه (Three.js) console.error می‌دهد و تست دود بی‌دلیل رد می‌شود.
   '--use-gl=angle', '--use-angle=swiftshader',
@@ -236,6 +239,56 @@ try {
   const panel = await waitFor(async () => await hasText('تست افتتاحیه'), 10000);
   const introErrs = await pageErrors();
   check('smoke: مسیر intro-test بالا می‌آید + پنل دیباگ', panel && introErrs.length === 0, panel ? introErrs.join(' | ') : 'پنل دیده نشد');
+
+  // پیش‌پخش درس (۲۵ نوامبر ۲۰۲۶): پیش از هر ویدیوی درس، ویدیوی v3 می‌آید؛
+  // با پایان ویدیو یا «رد کردن»، یوتیوب می‌آید. با نشست ساختگی وارد می‌شویم
+  // (همان الگوی #/status). یوتیوبِ بیرونی در این محیط ممکن است نرسد، پس
+  // «یوتیوب آمد» یعنی iframe یوتیوب یا پیامِ خطای بارگذاری — هر دو ثابت
+  // می‌کنند startYouTube بعد از پیش‌پخش اجرا شد.
+  const openVideoWithFakeSession = async (key) => {
+    await send('Page.navigate', { url: ORIGIN + '/#/video/' + key });
+    await sleep(1200);
+    await evalJs(`localStorage.clear()`);
+    await evalJs(`localStorage.setItem('ml-course-v2-auth', ${JSON.stringify(fakeSessionJSON(3600))})`);
+    await send('Page.reload', { ignoreCache: true });
+    await sleep(1500);
+  };
+  const prerollPresent = () => evalJs(`!!document.querySelector('video[src*="video-opening-site-entry-v3"]')`);
+  const ytOutcome = () => evalJs(`(() => {
+    if (document.querySelector('iframe[src*="youtube"]')) return 'iframe';
+    if (document.body.innerText.includes('پخش‌کنندهٔ یوتیوب بارگذاری نشد')) return 'fallback';
+    return null;
+  })()`);
+
+  // مسیر ۱ — پایان پیش‌پخش: ویدیو تا نزدیک پایان جلو می‌رود و یوتیوب می‌آید.
+  await openVideoWithFakeSession('day0');
+  const pre1 = await waitFor(prerollPresent, 10000);
+  const noYt1 = !(await ytOutcome());
+  let errs1 = await pageErrors();
+  check('smoke: پیش‌پخش درس پیش از یوتیوب می‌آید', pre1 && noYt1 && errs1.length === 0, !pre1 ? 'ویدیوی پیش‌پخش دیده نشد' : errs1.join(' | '));
+  const ff1 = await waitFor(async () => await evalJs(`(() => {
+    const v = document.querySelector('video[src*="video-opening-site-entry-v3"]');
+    if (!v || !isFinite(v.duration) || v.duration <= 1) return false;
+    if (v.paused) { void v.play().catch(() => {}); }
+    v.currentTime = v.duration - 0.3;
+    return true;
+  })()`), 5000);
+  const ytAfterEnd = ff1 && await waitFor(async () => await ytOutcome(), 30000);
+  errs1 = await pageErrors();
+  check('smoke: با پایان پیش‌پخش، یوتیوب می‌آید', !!ytAfterEnd && errs1.length === 0, ytAfterEnd ? `via=${ytAfterEnd}${errs1.length ? ' | ' + errs1.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
+
+  // مسیر ۲ — رد کردن: روی ویدیوی دوم، «رد کردن» یوتیوب را می‌آورد.
+  await openVideoWithFakeSession('linreg');
+  const pre2 = await waitFor(prerollPresent, 10000);
+  const skipped = pre2 && await evalJs(`(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'رد کردن');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  const ytAfterSkip = skipped && await waitFor(async () => await ytOutcome(), 30000);
+  const errs2 = await pageErrors();
+  check('smoke: با «رد کردن» پیش‌پخش، یوتیوب می‌آید', !!ytAfterSkip && errs2.length === 0, ytAfterSkip ? `via=${ytAfterSkip}${errs2.length ? ' | ' + errs2.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
 
   console.log(`\n==== ${results.filter((r) => r.ok).length}/${results.length} smoke checks passed ====`);
   code = results.every((r) => r.ok) ? 0 : 1;
