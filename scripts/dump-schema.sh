@@ -24,7 +24,7 @@ mkdir -p supabase
 # --schema-only: no rows. --no-owner: owner names differ on rebuild.
 # --schema=public: Supabase internal schemas (auth/storage/...) stay out.
 PGPASSWORD="$SUPABASE_DB_PASSWORD" pg_dump \
-  -h aws-0-eu-central-1.pooler.supabase.com -p 5432 \
+  -h aws-1-eu-central-1.pooler.supabase.com -p 5432 \
   -U postgres.awznimzcsmpaadvqwodg -d postgres \
   --schema-only --no-owner --schema=public \
   -f supabase/schema.sql

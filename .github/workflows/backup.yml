@@ -39,7 +39,7 @@ jobs:
             -v "$PWD/backup:/backup" \
             postgres:16 \
             pg_dump \
-              -h aws-0-eu-central-1.pooler.supabase.com -p 5432 \
+              -h aws-1-eu-central-1.pooler.supabase.com -p 5432 \
               -U postgres.awznimzcsmpaadvqwodg -d postgres \
               -F c -f /backup/ml-course-v2-$(date +%Y%m%d).dump
           ls -la backup/
