@@ -206,6 +206,7 @@
       {/if}
     </div>
   {/if}
+  {#if !entryActive}
   <!-- لایهٔ ۰ — پوستر ثابت (زیر ویدیو؛ در reduced-motion و پیش از پخش هم همین دیده می‌شود) -->
   <img
     src="covers/cover-hero.jpg"
@@ -504,4 +505,5 @@
       </button>
     {/if}
   </div>
+  {/if}
 </div>
