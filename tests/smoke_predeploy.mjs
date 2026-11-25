@@ -292,6 +292,30 @@ try {
   const errs2 = await pageErrors();
   check('smoke: با «رد کردن» پیش‌پخش، یوتیوب می‌آید', !!ytAfterSkip && errs2.length === 0, ytAfterSkip ? `via=${ytSkipVia}${errs2.length ? ' | ' + errs2.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
 
+  // اسکرول صفحهٔ ویدیو (۲۵ نوامبر ۲۰۲۶): اگر کاربر از پایینِ صفحهٔ درس روی
+  // ویدیو بزند، هش‌روتینگ scrollY را نگه می‌دارد؛ VideoView موقع mount باید
+  // اسکرول را به بالا برگرداند تا پخش‌کنندهٔ افتتاحیه توی دید باشد.
+  // مسیر واقعی را تکرار می‌کنیم: درس ۱-ب → اسکرول به پایین → هشِ درون‌صفحه‌ای
+  // به ویدیو (نه Page.navigate که صفحه را تازه می‌کند و scrollY را صفر می‌کند).
+  await send('Page.navigate', { url: ORIGIN + '/#/lesson/2' });
+  await sleep(1200);
+  await evalJs(`localStorage.clear()`);
+  await evalJs(`localStorage.setItem('ml-course-v2-auth', ${JSON.stringify(fakeSessionJSON(3600))})`);
+  await send('Page.reload', { ignoreCache: true });
+  const lessonMounted = await waitFor(async () => await hasText('ویدیوهای این درس'), 10000);
+  const scrolledDown = lessonMounted && await evalJs(`(() => { window.scrollTo(0, 1200); return window.scrollY > 500; })()`);
+  await sleep(300);
+  await evalJs(`location.hash = '#/video/linreg'`);
+  const pre3 = await waitFor(prerollPresent, 10000);
+  await sleep(500);
+  const st = pre3 ? await evalJs(`(() => {
+    const v = document.querySelector('video[src*="video-opening-site-entry-v3"]');
+    const r = v.getBoundingClientRect();
+    return { y: Math.round(window.scrollY), top: Math.round(r.top), vh: window.innerHeight };
+  })()`) : null;
+  const errs3 = await pageErrors();
+  check('smoke: صفحهٔ ویدیو از پایینِ درس هم با افتتاحیهٔ توی دید باز می‌شود', !!st && scrolledDown && st.y <= 10 && st.top >= 0 && st.top < st.vh && errs3.length === 0, st ? `scrollY=${st.y} playerTop=${st.top} vh=${st.vh}${errs3.length ? ' | ' + errs3.join(' | ') : ''}` : (scrolledDown ? 'پیش‌پخش دیده نشد' : 'درس mount نشد یا اسکرول نخورد'));
+
   console.log(`\n==== ${results.filter((r) => r.ok).length}/${results.length} smoke checks passed ====`);
   code = results.every((r) => r.ok) ? 0 : 1;
 } catch (e) {
