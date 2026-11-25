@@ -200,10 +200,13 @@ jobs:
             n_keys int;
             n_members int;
           BEGIN
-            -- 1) exactly 9 tables in public
+            -- 1) exactly 12 tables in public (9 from the original seed plus
+            -- lab_reviews, settings, teach_backs — the dump itself restores
+            -- 12, and the FK list in the first restore run names all 12;
+            -- the earlier backend inspection listing 9 was incomplete)
             SELECT count(*) INTO n_tables FROM pg_tables WHERE schemaname = 'public';
-            IF n_tables <> 9 THEN
-              RAISE EXCEPTION 'expected 9 tables in public, got %', n_tables;
+            IF n_tables <> 12 THEN
+              RAISE EXCEPTION 'expected 12 tables in public, got %', n_tables;
             END IF;
             -- 2) 168 quiz answer keys (162 phase 2 + 6 day zero, per seed files)
             SELECT count(*) INTO n_keys FROM quiz_answer_keys;
@@ -236,6 +239,6 @@ jobs:
             ) THEN
               RAISE EXCEPTION 'some public table has RLS disabled';
             END IF;
-            RAISE NOTICE 'restore-test checks passed: 9 tables, 168 keys, 2 members, both functions, RLS on';
+            RAISE NOTICE 'restore-test checks passed: 12 tables, 168 keys, 2 members, both functions, RLS on';
           END $$;
           SQL
