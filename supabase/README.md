@@ -29,10 +29,13 @@ SUPABASE_DB_PASSWORD='<db password>' bash scripts/dump-schema.sh
 
 **باید شامل باشد:**
 
-- هر ۹ جدول اسکیمای `public` (با ستون‌ها، قیدها، ایندکس‌ها):
+- هر ۱۲ جدول اسکیمای `public` (با ستون‌ها، قیدها، ایندکس‌ها):
   `members`، `day_progress`، `quiz_answers`، `mistakes`، `events`،
-  `audit_logs`، `lab_notebooks`، `quiz_answer_keys`، `studio_tickets`
-- هر ۲ تابع: `submit_quiz_attempt` و `verify_studio_ticket`
+  `audit_logs`، `lab_notebooks`، `quiz_answer_keys`، `studio_tickets`،
+  `lab_reviews`، `settings`، `teach_backs`
+- هر ۶ تابع: `submit_quiz_attempt` و `verify_studio_ticket` (دو RPC) +
+  سه کمکی RLS (`is_teacher`، `is_student`، `current_user_role`) + یک
+  trigger (`log_audit_event`)
 - همهٔ `CREATE POLICY`ها (RLS) و همهٔ `GRANT`ها — GRANTها بخشی از مدل
   دسترسی‌اند و نگه داشته می‌شوند.
 
@@ -43,7 +46,7 @@ SUPABASE_DB_PASSWORD='<db password>' bash scripts/dump-schema.sh
 
 ## راستی‌آزمایی
 
-اجرای `schema.sql` روی یک Postgres خالی باید بدون خطا هر ۹ جدول و هر ۲ تابع
+اجرای `schema.sql` روی یک Postgres خالی باید بدون خطا هر ۱۲ جدول و هر ۶ تابع
 را بسازد. این چک را می‌توان با ورک‌فلوی `restore-test.yml` ترکیب کرد
 (همان جاب، بعد از restore دامپ).
 
