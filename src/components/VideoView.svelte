@@ -6,8 +6,11 @@
 
   let playerEl = $state(null)
   let player = null
-  let apiFailed = $state(false)
   let apiReady = $state(false)
+  // حالت جایگزین: اگر پخش‌کنندهٔ API یوتیوب ساخته نشد یا خطا داد (مثلاً خطای
+  // 153 بابت Referer)، به‌جای جعبهٔ سیاه یک iframe ساده نشان داده می‌شود.
+  let useFallback = $state(false)
+  let playerError = $state(null)
   let currentCue = $state(null)
   let currentTime = $state(0)
   let pollTimer = null
@@ -96,9 +99,38 @@
     startYouTube()
   }
 
+  function handlePlayerError(code) {
+    // خطای پخش‌کنندهٔ API (مثلاً 101/150: جاسازی بسته است؛ 153: Referer
+    // نرسیده) — پخش‌کنندهٔ API را کنار بگذار و به iframe ساده برو.
+    playerError = code ?? 'unknown'
+    try {
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = null
+      player?.destroy()
+    } catch {
+      /* noop */
+    }
+    player = null
+    useFallback = true
+  }
+
+  async function loadApiWithRetry() {
+    try {
+      return await loadApi()
+    } catch {
+      // یک تلاش تازه: promiseٔ ردشده و اسکریپت خراب را دور بریز تا تلاش
+      // دوم واقعاً از اول لود کند (نه همان promiseٔ ردشده).
+      apiPromise = null
+      const bad = document.querySelector('script[data-yt-api="1"]')
+      if (bad) bad.remove()
+      await new Promise((r) => setTimeout(r, 2000))
+      return await loadApi()
+    }
+  }
+
   async function startYouTube() {
     try {
-      const YT = await loadApi()
+      const YT = await loadApiWithRetry()
       apiReady = true
       player = new YT.Player(playerEl, {
         videoId: video.youtubeId,
@@ -115,11 +147,15 @@
                 /* noop */
               }
             }, 250)
-          }
+          },
+          onError: (e) => handlePlayerError(e?.data)
         }
       })
     } catch {
-      apiFailed = true
+      // حتی با یک تلاش دوباره API لود نشد (یوتیوب از این اتصال در دسترس
+      // نیست) — iframe ساده شانس دوم است؛ اگر آن هم باز نشد، پیام زیر
+      // پخش‌کننده دلیلش را می‌گوید و لینک یوتیوب می‌ماند.
+      useFallback = true
     }
   }
 
@@ -159,7 +195,18 @@
   </div>
 
   <div class="relative w-full overflow-hidden rounded-2xl border border-[var(--glass-border)] bg-black" style="aspect-ratio: 16 / 9;">
-    <div bind:this={playerEl} class="absolute inset-0 w-full h-full"></div>
+    {#if useFallback}
+      <iframe
+        title={video.title}
+        src="https://www.youtube.com/embed/{video.youtubeId}"
+        class="absolute inset-0 w-full h-full"
+        referrerpolicy="strict-origin-when-cross-origin"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+      ></iframe>
+    {:else}
+      <div bind:this={playerEl} class="absolute inset-0 w-full h-full"></div>
+    {/if}
     {#if showPreroll}
       <video
         bind:this={prerollVideoEl}
@@ -200,23 +247,24 @@
         {/each}
       </div>
     {/if}
-    {#if apiFailed}
-      <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#1d1a18] text-[#f5efe6] p-6 text-center">
-        <p class="text-sm">پخش‌کنندهٔ یوتیوب بارگذاری نشد (اتصال اینترنت را بررسی کن).</p>
-        <a class="underline text-sm" href={video.watchUrl} target="_blank" rel="noreferrer">مشاهدهٔ ویدیو در یوتیوب</a>
-      </div>
-    {/if}
   </div>
+
+  {#if useFallback}
+    <p class="text-xs leading-6 text-[var(--ink-soft)]">
+      پخش‌کنندهٔ اصلی یوتیوب بارگذاری نشد{#if playerError} (خطای {playerError}){/if}، پس نسخهٔ سادهٔ آن آمد؛ زیرنویس فارسی همگام در این حالت کار نمی‌کند. اگر این قاب هم خالی ماند، یعنی یوتیوب از این اینترنت در دسترس نیست — با VPN امتحان کن یا از لینک «مشاهده در یوتیوب» پایین استفاده کن.
+    </p>
+  {/if}
 
   {#if video.cues && video.cues.length}
     <div>
-      <p class="font-bold text-sm mb-2">متن کامل زیرنویس — برای پرش به هر بخش، روی آن بزن</p>
+      <p class="font-bold text-sm mb-2">{useFallback ? 'متن کامل زیرنویس (فقط خواندن)' : 'متن کامل زیرنویس — برای پرش به هر بخش، روی آن بزن'}</p>
       <div class="space-y-1 max-h-96 overflow-y-auto rounded-2xl border border-[var(--glass-border)] bg-white/70 p-3">
         {#each video.cues as cue}
           <button
             type="button"
             class="w-full text-right flex gap-3 items-start rounded-xl px-2 py-1.5 text-xs leading-6 hover:bg-[var(--canvas-subtle)] cursor-pointer"
             class:bg-[var(--canvas-subtle)]={currentCue === cue}
+            disabled={useFallback}
             onclick={() => seekTo(cue)}
           >
             <span class="font-mono shrink-0 text-[var(--ink-soft)]" dir="ltr">{fmt(cue.start)}</span>
@@ -228,7 +276,6 @@
   {/if}
 
   <p class="text-xs text-[var(--ink-soft)]">
-    زمان کنونی پخش: <span dir="ltr" class="font-mono">{fmt(currentTime)}</span>
-    • <a class="underline" href={video.watchUrl} target="_blank" rel="noreferrer">مشاهده در یوتیوب</a>
+    {#if !useFallback}زمان کنونی پخش: <span dir="ltr" class="font-mono">{fmt(currentTime)}</span> • {/if}<a class="underline" href={video.watchUrl} target="_blank" rel="noreferrer">مشاهده در یوتیوب</a>
   </p>
 </div>
