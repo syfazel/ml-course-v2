@@ -46,6 +46,25 @@ function checkBuildEnv(mode) {
       '[build-gate] FAIL: ‏VITE_SUPABASE_URL یک URL معتبر نیست (باید با http(s):// شروع شود).'
     )
   }
+  // گیت کلید کامل (۲۵ نوامبر ۲۰۲۶): بازیابیِ ناقصِ .env.local در
+  // ۲۴ نوامبر، کلید publishable را به ۱۵ نویسه («sb_publishable_» خالی)
+  // بریده بود و همهٔ گیت‌های «حضور» سبز می‌شدند — در حالی که گیت‌وی
+  // سوپابیس هر ورود را با 401 «Invalid API key» رد می‌کرد و کد قدیمی
+  // همان 401 را «نشست منقضی شده» نشان می‌داد. کلید کامل یا
+  // sb_publishable_ با دست‌کم ۲۰ نویسهٔ بعدش است، یا JWT قدیمیِ بلند؛
+  // کوتاه‌تر از آن، بیلد متوقف می‌شود و هرگز دیپلوی نمی‌شود.
+  const key = (process.env.VITE_SUPABASE_PUBLISHABLE_KEY || fileEnv.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim()
+  const looksFull =
+    /^sb_publishable_[A-Za-z0-9_-]{20,}$/.test(key) ||
+    /^eyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}$/.test(key)
+  if (!looksFull) {
+    throw new Error(
+      '[build-gate] FAIL: ‏VITE_SUPABASE_PUBLISHABLE_KEY کامل نیست ' +
+        `(طول ${key.length} نویسه؛ کلید کامل sb_publishable_ دست‌کم ۳۵ نویسه است). ` +
+        'کلید ناقص، ورود را با 401 گیت‌وی می‌شکند (حادثهٔ ۲۵ نوامبر ۲۰۲۶). ' +
+        'کلید کامل را از داشبورد Supabase یا تاریخ gh-pages بازیابی کن، بعد بیلد بگیر.'
+    )
+  }
 }
 
 function buildHash() {

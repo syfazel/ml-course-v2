@@ -1,12 +1,44 @@
 // پیام‌های خطای فارسی و اعتبارسنجی ورودی‌ها برای Auth سایت ML
 // هیچ رمز یا کلیدی در پیام‌ها بازتاب داده نمی‌شود.
+//
+// بازنویسی ۲۵ نوامبر ۲۰۲۶ — طبقه‌بندی از روی شکل‌های واقعیِ مشاهده‌شده
+// روی سرور زنده (نه حدس و نه شکل‌های ساختگیِ تست‌ها):
+//   ورود با رمز نادرست:  400 {"error_code":"invalid_credentials",
+//                        "msg":"Invalid login credentials"}
+//   refresh مرده:        400 {"error_code":"validation_failed",
+//                        "msg":"Refresh token is not valid"}
+//   کلید API نامعتبر:    401 {"message":"Invalid API key"} (از گیت‌وی؛
+//                        وقتی کلید publishable بیلد ناقص باشد)
+//   JWT خراب روی داده:   401 {"code":"PGRST301","message":"..."} (پست‌گرست)
+//   کاربر با JWT خراب:   403 {"error_code":"bad_jwt","msg":"..."}
+//   عضویتِ anon:         {"code":"42501","message":"permission denied..."}
+// درسِ حادثهٔ ۲۵ نوامبر: تشخیص با زیررشتهٔ پیام، شکننده است —
+// «Invalid API key» با 401، زیر طبقه‌بندیِ قدیمیِ «هر 401 یعنی منقضی»
+// مستقیم به «نشست منقضی شده» می‌رسید. پس طبقه‌بندی فقط با
+// status + error_code انجام می‌شود؛ پیام فقط مکملِ آن‌هاست.
+
+// شکل یکتا برای خواندن خطا: supabase-js گاهی code را در err.code و
+// گاهی در err.error_code می‌گذارد، و پیام را در message یا msg.
+function shapeOf(err) {
+  if (!err) return { status: null, code: '', msg: '' }
+  const status = err.status ?? err.statusCode ?? null
+  const code = String(err.code ?? err.error_code ?? '').toLowerCase()
+  const msg = String(err.message ?? err.msg ?? err ?? '').toLowerCase()
+  return { status: typeof status === 'number' ? status : null, code, msg }
+}
+
+export function errorFingerprint(err) {
+  const { status, code, msg } = shapeOf(err)
+  return { status, code: code || null, message: msg ? msg.slice(0, 120) : null }
+}
 
 export function isRateLimitError(err) {
-  if (!err) return false
-  const status = err.status || err.statusCode
-  const msg = String(err.message || err).toLowerCase()
+  const { status, code, msg } = shapeOf(err)
   return (
     status === 429 ||
+    code.includes('rate_limit') ||
+    code.includes('over_email_send_rate_limit') ||
+    code.includes('over_request_rate_limit') ||
     msg.includes('rate limit') ||
     msg.includes('too many requests') ||
     msg.includes('over_email_send_rate_limit') ||
@@ -14,22 +46,26 @@ export function isRateLimitError(err) {
   )
 }
 
+// کلید API نامعتبر (گیت‌وی): بیلد با کلید ناقص/اشتباه. این خطای
+// پیکربندیِ سرور است، نه خطای کاربر و نه انقضای نشست — باید با نام
+// خودش نشان داده شود تا دوباره پشت «منقضی» یا «ناموفق» پنهان نشود.
+export function isInvalidApiKeyError(err) {
+  const { status, msg } = shapeOf(err)
+  return status === 401 && msg.includes('invalid api key')
+}
+
 // «نشست منقضی شده» فقط وقتی درست است که لایهٔ Auth صریحاً بگوید
-// refresh token مرده است — نه با هر 401.
-// علت ریشه‌ای قفلِ ورود (۲۵ نوامبر ۲۰۲۶): هر 401 روی خواندن داده
-// (مثلاً JWT در لحظهٔ چرخش توکن، یا یک 401 گذرا از PostgREST) اینجا
-// «منقضی» فرض می‌شد و نشستِ همین حالا با رمز درست ساخته‌شده، همان لحظه
-// پاک می‌شد — یعنی رمز درست، مستقیم به خطای «نشست منقضی شده» می‌رسید.
-// 401 روی داده حالا isUnauthorizedError است: یک بار refresh و تکرار،
-// نه اعلام انقضا.
+// refresh token مرده است. شکل واقعیِ مشاهده‌شده: validation_failed با
+// «Refresh token is not valid»؛ شکل‌های قدیمی‌تر هم به‌عنوان پشتیبان
+// می‌مانند. 401 به‌تنهایی، «JWT expired» روی داده، و «invalid jwt»
+// انقضا نیستند — آن‌ها isUnauthorizedError اند (refresh و تکرار).
 export function isSessionExpiredError(err) {
-  if (!err) return false
-  const code = String(err.code || '').toLowerCase()
-  const msg = String(err.message || err).toLowerCase()
+  const { code, msg } = shapeOf(err)
   return (
     code === 'session_not_found' ||
     code === 'refresh_token_not_found' ||
     code === 'invalid_refresh_token' ||
+    (code === 'validation_failed' && msg.includes('refresh token')) ||
     msg.includes('refresh token not found') ||
     msg.includes('invalid refresh token') ||
     msg.includes('session not found')
@@ -37,16 +73,14 @@ export function isSessionExpiredError(err) {
 }
 
 // 401 لایهٔ داده (PostgREST و جز آن): توکنِ همراه درخواست پذیرفته نشد.
-// به‌تنهایی انقضا نیست — توکن ممکن است در همان لحظه در حال چرخش باشد
-// یا درخواست با توکنِ یک لحظه پیش فرستاده شده باشد. پاسخ درست:
-// یک بار refresh و تکرار همان خواندن؛ فقط اگر refresh هم صریحاً
-// بگوید توکن مرده و نشستی زنده نمانده، «منقضی» اعلام می‌شود.
+// به‌تنهایی انقضا نیست — توکن ممکن است در همان لحظه در حال چرخش باشد.
+// پاسخ درست: یک بار refresh و تکرار همان خواندن؛ فقط اگر refresh هم
+// صریحاً بگوید توکن مرده و نشستی زنده نمانده، «منقضی» اعلام می‌شود.
 export function isUnauthorizedError(err) {
-  if (!err) return false
-  const status = err.status || err.statusCode
-  const msg = String(err.message || err).toLowerCase()
+  const { status, code, msg } = shapeOf(err)
   return (
     status === 401 ||
+    code === 'pgrst301' ||
     msg.includes('jwt expired') ||
     msg.includes('invalid jwt') ||
     msg.includes('invalid token')
@@ -54,8 +88,7 @@ export function isUnauthorizedError(err) {
 }
 
 export function isNetworkError(err) {
-  if (!err) return false
-  const msg = String(err.message || err).toLowerCase()
+  const { msg } = shapeOf(err)
   return (
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
@@ -72,6 +105,13 @@ export function loginErrorMessage(err) {
       code: 'AUTH_RATE_LIMITED'
     }
   }
+  if (isInvalidApiKeyError(err)) {
+    return {
+      text: 'پیکربندی ورود روی سرور خراب است (کلید ارتباط نامعتبر). لطفاً به استاد اطلاع دهید.',
+      kind: 'error',
+      code: 'AUTH_BAD_API_KEY'
+    }
+  }
   if (isNetworkError(err)) {
     return {
       text: 'ارتباط با سرور احراز هویت برقرار نشد. اتصال اینترنت را بررسی کنید.',
@@ -79,9 +119,10 @@ export function loginErrorMessage(err) {
       code: 'AUTH_NETWORK'
     }
   }
-  const msg = String((err && err.message) || err || '').toLowerCase()
+  const { code, msg } = shapeOf(err)
 
   if (
+    code === 'invalid_credentials' ||
     msg.includes('invalid login credentials') ||
     msg.includes('invalid_credentials')
   ) {
@@ -127,6 +168,13 @@ export function authErrorMessage(where, err) {
       code: 'AUTH_RATE_LIMITED'
     }
   }
+  if (isInvalidApiKeyError(err)) {
+    return {
+      text: 'پیکربندی ورود روی سرور خراب است (کلید ارتباط نامعتبر). لطفاً به استاد اطلاع دهید.',
+      kind: 'error',
+      code: 'AUTH_BAD_API_KEY'
+    }
+  }
   if (isSessionExpiredError(err)) {
     return {
       text: 'نشست کاربری شما منقضی شده است. لطفاً دوباره وارد شوید.',
@@ -141,7 +189,7 @@ export function authErrorMessage(where, err) {
       code: 'AUTH_NETWORK'
     }
   }
-  const msg = String((err && err.message) || err || '').toLowerCase()
+  const { msg } = shapeOf(err)
   if (msg.includes('invalid login credentials')) {
     return {
       text: 'رمز عبور فعلی نادرست است.',

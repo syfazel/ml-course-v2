@@ -14,6 +14,13 @@
 //       «تعیین رمز عبور تازه» تبدیل نمی‌کند.
 //   L4: stash قدیمیِ نسخه‌های پیشین در شروعِ بدون نشست پاک می‌شود
 //       و ورود تمیز انجام می‌شود.
+//   L5: رمز نادرست با شکل واقعیِ سرور (invalid_credentials) → پیام
+//       دقیق «ایمیل یا رمز عبور نادرست است.» + قدمِ «بررسی ایمیل و
+//       رمز عبور»؛ هرگز «منقضی» نیست.
+//   L6 (رگرسیون حادثهٔ ۲۵ نوامبر): 401 گیت‌وی «Invalid API key»
+//       (کلید publishable ناقص) → پیام پیکربندی با نام خودش
+//       (AUTH_BAD_API_KEY) + دکمهٔ «کپی گزارش خطا»؛ هرگز «نشست
+//       منقضی شده» نشان داده نمی‌شود.
 import { spawn } from 'node:child_process';
 
 const CHROME = process.env.HOME + '/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome';
@@ -205,7 +212,15 @@ try {
       }
       if (url.includes('/auth/v1/token') && url.includes('grant_type=password')) {
         if (stub.tokenMode === 'invalid') {
-          return fulfill(400, { error: 'invalid_grant', error_description: 'Invalid login credentials' });
+          // شکل واقعیِ مشاهده‌شده روی سرور زنده (۲۵ نوامبر ۲۰۲۶):
+          // 400 {"error_code":"invalid_credentials","msg":"Invalid login credentials"}
+          return fulfill(400, { code: 400, error_code: 'invalid_credentials', msg: 'Invalid login credentials' });
+        }
+        if (stub.tokenMode === 'bad-key') {
+          // شکل واقعیِ گیت‌وی وقتی کلید publishable بیلد ناقص است
+          // (حادثهٔ ۲۵ نوامبر): 401 {"message":"Invalid API key"} —
+          // این خطا هرگز نباید «نشست منقضی شده» نشان داده شود.
+          return fulfill(401, { message: 'Invalid API key', hint: 'Double check your API key.' });
         }
         return fulfill(200, {
           access_token: 'fake-access-token', token_type: 'bearer', expires_in: 3600,
@@ -215,7 +230,9 @@ try {
       }
       if (url.includes('/auth/v1/token') && url.includes('grant_type=refresh_token')) {
         if (stub.refreshMode === 'dead') {
-          return fulfill(400, { error: 'invalid_grant', error_description: 'Invalid Refresh Token: Refresh Token Not Found' });
+          // شکل واقعیِ مشاهده‌شده روی سرور زنده (۲۵ نوامبر ۲۰۲۶):
+          // 400 {"error_code":"validation_failed","msg":"Refresh token is not valid"}
+          return fulfill(400, { code: 400, error_code: 'validation_failed', msg: 'Refresh token is not valid' });
         }
         return fulfill(200, {
           access_token: 'fake-access-token-2', token_type: 'bearer', expires_in: 3600,
@@ -228,9 +245,9 @@ try {
       }
       if (url.includes('/rest/v1/members')) {
         stub.membersCalls++;
-        if (stub.membersMode === 'unauthorized-always') return fulfill(401, { message: 'JWT expired' });
+        if (stub.membersMode === 'unauthorized-always') return fulfill(401, { code: 'PGRST301', message: 'JWT expired' });
         if (stub.membersMode === 'unauthorized-once' && stub.membersCalls === 1) {
-          return fulfill(401, { message: 'JWT expired' });
+          return fulfill(401, { code: 'PGRST301', message: 'JWT expired' });
         }
         if (stub.membersMode === 'empty') return fulfill(200, []);
         return fulfill(200, MEMBER_ROW);
@@ -324,6 +341,28 @@ try {
   check('L4b: login works from the cleaned state', (await loginWith('test@example.com', 'correct-password')) === 'ok');
   const l4Home = await waitFor(async () => await hasText('سلام، Test Teacher'), 10000);
   check('L4c: home renders after clean login', l4Home);
+
+  // ===== L5: رمز نادرست با شکل واقعی سرور → پیام دقیق، نه «ناموفق» کلی =====
+  resetStub('ok', 'invalid', 'ok');
+  await seedAndLoad('#/login', {});
+  check('L5a: login page renders', await waitFor(async () => await hasText('ورود به دوره'), 8000));
+  check('L5b: wrong-password typed + login clicked', (await loginWith('test@example.com', 'wrong-password')) === 'ok');
+  const l5Text = await waitFor(async () => await hasText('ایمیل یا رمز عبور نادرست است.'), 8000);
+  check('L5c: invalid credentials map to the exact message (observed server shape)', l5Text);
+  check('L5d: code is AUTH_INVALID_CREDENTIALS', await hasText('AUTH_INVALID_CREDENTIALS'));
+  check('L5e: step label shows the password step', await hasText('قدم: بررسی ایمیل و رمز عبور'));
+  check('L5f: no "session expired" text on wrong password', !(await hasText('نشست کاربری شما منقضی شده')));
+
+  // ===== L6: کلید API نامعتبر (حادثهٔ ۲۵ نوامبر) هرگز «منقضی» نیست =====
+  resetStub('ok', 'bad-key', 'ok');
+  await seedAndLoad('#/login', {});
+  check('L6a: login page renders', await waitFor(async () => await hasText('ورود به دوره'), 8000));
+  check('L6b: login clicked with bad gateway key', (await loginWith('test@example.com', 'correct-password')) === 'ok');
+  const l6Text = await waitFor(async () => await hasText('پیکربندی ورود روی سرور خراب است'), 8000);
+  check('L6c: bad API key maps to the config message, by its own name', l6Text);
+  check('L6d: code is AUTH_BAD_API_KEY', await hasText('AUTH_BAD_API_KEY'));
+  check('L6e: gateway 401 NEVER renders as session-expired', !(await hasText('نشست کاربری شما منقضی شده')));
+  check('L6f: copy-diagnosis button is offered', await hasText('کپی گزارش خطا برای استاد'));
 
   // ===== no unhandled page exceptions during the run =====
   check('X1: no unhandled page exceptions', pageExceptions.length === 0, pageExceptions.join(' | '));

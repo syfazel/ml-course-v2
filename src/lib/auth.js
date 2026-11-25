@@ -1,5 +1,23 @@
-// لایه Auth فاز ۱ برای سایت یادگیری ماشین (نسخه دوم)
+// لایه Auth سایت یادگیری ماشین (نسخه دوم) — بازنویسی از صفر، ۲۵ نوامبر ۲۰۲۶
 // ثبت‌نام عمومی بسته است؛ نقش فقط از public.members خوانده می‌شود.
+//
+// قراردادِ ورود (سه قدم، هر قدم پیامِ خودش را دارد):
+//   ۱. بررسی ایمیل و رمز عبور (password) — خطا اینجاست، یعنی رمز/ایمیل
+//      نادرست است، یا سرور در دسترس نیست، یا پیکربندیِ کلید خراب است.
+//   ۲. خواندن اطلاعات عضویت (member) — خطا اینجاست، یعنی رمز درست بود
+//      و نشست معتبر ذخیره شده است؛ نشست هرگز پاک نمی‌شود و «منقضی»
+//      اعلام نمی‌شود؛ فقط «تلاش دوباره» هست.
+//   ۳. ورود به خانه (done).
+//
+// قانونِ آهنی: شکستِ خواندنِ داده، هرگز «انقضای نشست» نیست.
+// «منقضی» فقط وقتی اعلام می‌شود که لایهٔ Auth صریحاً بگوید refresh
+// token مرده است (شکل‌های مشاهده‌شده روی سرور زنده در auth-errors.js)
+// و getSession هم نشستی زنده نشان ندهد — و در همان لحظه، ذخیرهٔ نشست
+// بی‌صدا و کامل پاک می‌شود تا ورود تازه با بقایای کهنه قفل نشود.
+//
+// تنها منبع حقیقتِ نشست، ذخیرهٔ خودِ supabase-js است
+// (کلید ml-course-v2-auth) با autoRefreshToken. هیچ stash دستی و هیچ
+// refresh دوم با refresh_tokenِ ذخیره‌شدهٔ جدا نیست.
 
 import { sb, SUPABASE_STORAGE_KEY } from './supabase.js'
 import { auth } from './auth-store.svelte.js'
@@ -14,6 +32,7 @@ import {
   isSessionExpiredError,
   isUnauthorizedError,
   isNetworkError,
+  errorFingerprint,
   MEMBER_NOT_FOUND_MESSAGE,
   MEMBER_READ_FAILED_MESSAGE,
   STALE_SESSION_CLEARED_MESSAGE,
@@ -23,9 +42,6 @@ import {
 export { handleAuthEvent, isRateLimitError, isSessionExpiredError }
 
 const VALID_ROLES = new Set(['teacher', 'student'])
-// فاز ۳ (F6): خواندن عضویت ۳ تلاش با backoff. گاردِ «در حال اجرا» دیگر
-// null برنمی‌گرداند — فراخواننده‌های هم‌زمان همان وعدهٔ در حال اجرا را
-// می‌گیرند تا یک خواندنِ در جریان، «عضویت پیدا نشد» نشان داده نشود.
 const FETCH_MEMBER_ATTEMPTS = 3
 const FETCH_MEMBER_BACKOFF_MS = [500, 1500]
 let fetchMemberInflight = null
@@ -33,10 +49,19 @@ let authSubscription = null
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// تازه‌سازیِ تک‌نمونه‌ایِ نشست (۲۵ نوامبر ۲۰۲۶): فراخواننده‌های هم‌زمان
-// همان وعدهٔ در حال اجرا را می‌گیرند تا دو refresh هم‌زمان با یک
-// refresh_token مسابقه ندهند — با چرخش توکن، دومی «توکنِ استفاده‌شده»
-// است و نشست را می‌سوزاند.
+// گزارش تشخیص برای کنسول (بدون رمز و بدون توکن): قدم + وضعیت + کد خطا.
+function diagnose(step, error) {
+  try {
+    console.warn('[ml-auth]', step, JSON.stringify(errorFingerprint(error)))
+  } catch {}
+}
+
+// ---------- نشست ----------
+
+// تازه‌سازیِ تک‌نمونه‌ایِ نشست: فراخواننده‌های هم‌زمان همان وعدهٔ در
+// حال اجرا را می‌گیرند تا دو refresh هم‌زمان با یک refresh_token
+// مسابقه ندهند — با چرخش توکن، دومی «توکنِ استفاده‌شده» است و نشست
+// را می‌سوزاند.
 let refreshInflight = null
 export async function refreshSessionOnce() {
   if (!sb) return { ok: false, expired: false }
@@ -70,10 +95,7 @@ async function sessionIsAlive() {
   }
 }
 
-// «منقضی» فقط وقتی اعلام می‌شود که نشستی زنده نمانده باشد — و در همان
-// لحظه، ذخیرهٔ نشست بی‌صدا و کامل پاک می‌شود تا ورود تازه با بقایای
-// کهنه قفل نشود. اگر نشست زنده است، false برمی‌گردد و فراخواننده
-// خطا را گذرا می‌شمرد، نه منقضی.
+// «منقضی» فقط وقتی اعلام می‌شود که نشستی زنده نمانده باشد.
 async function markExpiredIfDead() {
   if (await sessionIsAlive()) return false
   await clearAllAuthStorage()
@@ -81,6 +103,62 @@ async function markExpiredIfDead() {
   auth.memberErrorKind = 'expired'
   return true
 }
+
+// پاک‌کردن کاملِ بقایای نشست: کلید اصلیِ supabase-js، verifier کهنهٔ
+// PKCE همان کلید، و stash قدیمیِ نسخه‌های پیشین — از هر دو انبار.
+// عمداً فقط همین کلیدهای ویژهٔ همین سایت پاک می‌شوند — نه هیچ الگوی
+// `sb-*` و نه «supabase»: همین origin ‏(syfazel.github.io)‏ میزبان
+// sclack_A هم هست و نشستِ آن برنامه با کلید sb-* خودش زنده است؛
+// پاک‌کردن کورِ آن‌ها، یاسین را از sclack_A هم بیرون می‌انداخت.
+export async function clearAllAuthStorage() {
+  if (typeof window === 'undefined') return
+  const keys = [
+    SUPABASE_STORAGE_KEY,
+    `${SUPABASE_STORAGE_KEY}-code-verifier`,
+    'ml_v2_stashed_session'
+  ]
+  const stores = []
+  try {
+    if (window.localStorage) stores.push(window.localStorage)
+  } catch {}
+  try {
+    if (window.sessionStorage) stores.push(window.sessionStorage)
+  } catch {}
+  for (const store of stores) {
+    for (const key of keys) {
+      try {
+        store.removeItem(key)
+      } catch {}
+    }
+  }
+}
+
+// بقایای قدیمی که دیگر خوانده نمی‌شوند (فقط stash نسخه‌های پیشین):
+// در initAuth وقتی نشستی زنده نیست، بی‌صدا پاک می‌شوند. کلید اصلیِ
+// نشست اینجا دست نمی‌خورد — مبادلهٔ PKCE بازیابی ممکن است همان لحظه
+// در حال تکمیل باشد.
+function clearLegacyAuthKeys() {
+  if (typeof window === 'undefined') return
+  for (const store of [window.localStorage, window.sessionStorage]) {
+    try {
+      store?.removeItem('ml_v2_stashed_session')
+    } catch {}
+  }
+}
+
+// پاک‌کردن نشست کهنه و ورود تازه — حالا خودکار و بی‌صدا در مسیر انقضا
+// انجام می‌شود؛ این تابع فقط برای سازگاریِ فراخواننده‌های قدیمی مانده
+// است و دیگر دکمه‌ای در صفحهٔ ورود ندارد.
+export async function clearStaleSession() {
+  try {
+    if (sb) await sb.auth.signOut()
+  } catch {}
+  await clearAllAuthStorage()
+  auth.resetSession({ expired: false, notice: null })
+  return { ok: true, text: STALE_SESSION_CLEARED_MESSAGE, kind: 'ok' }
+}
+
+// ---------- خواندن عضویت ----------
 
 function isRetryableMemberError(error) {
   if (isSessionExpiredError(error)) return false
@@ -121,11 +199,12 @@ async function fetchMemberAttempt(user) {
     }
 
     if (isUnauthorizedError(error)) {
-      // 401 روی خواندن داده، «انقضا» نیست: توکن ممکن است همین لحظه در
-      // حال چرخش باشد. یک بار refresh کن و همان خواندن را تکرار کن.
+      // 401 روی خواندن داده، «انقضا» نیست: توکن ممکن است همین لحظه
+      // در حال چرخش باشد. یک بار refresh کن و همان خواندن را تکرار کن.
       // فقط وقتی refresh صریحاً بگوید توکن مرده و نشستی هم زنده
       // نمانده، «منقضی» اعلام می‌شود؛ وگرنه نشستِ تازه‌ساخته‌شده با
       // رمز درست حفظ می‌شود و خطا «گذرا» است (دکمهٔ تلاش دوباره).
+      diagnose('member:unauthorized', error)
       const refreshed = await refreshSessionOnce()
       if (refreshed.ok) continue
       if (refreshed.expired && (await markExpiredIfDead())) return null
@@ -136,6 +215,7 @@ async function fetchMemberAttempt(user) {
     }
 
     if (isSessionExpiredError(error)) {
+      diagnose('member:expired-shape', error)
       if (await markExpiredIfDead()) return null
       auth.member = null
       auth.memberError = MEMBER_READ_FAILED_MESSAGE
@@ -148,12 +228,13 @@ async function fetchMemberAttempt(user) {
       continue
     }
 
+    diagnose('member:failed', error)
     auth.member = null
     auth.memberError = 'خطا در خواندن اطلاعات عضویت از سرور. لطفاً دوباره تلاش کنید.'
     auth.memberErrorKind = 'transient'
     return null
   }
-  // هر سه تلاش با 401 گذشت ولی refresh هر بار موفق بود: گذرا، نه منقضی.
+  // هر سه تلاش گذشت و refresh هم هر بار موفق بود: گذرا، نه منقضی.
   if (!auth.member && !auth.memberErrorKind) {
     auth.memberError = MEMBER_READ_FAILED_MESSAGE
     auth.memberErrorKind = 'transient'
@@ -177,84 +258,27 @@ export async function fetchMember(user) {
 // ولی خواندن عضویت نشد». در صورت موفقیت، فراخواننده به خانه می‌رود.
 export async function retryMemberRead() {
   if (!sb || !auth.user) {
-    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
+    return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED', step: 'member' }
   }
   auth.loading = true
   try {
     const member = await fetchMember(auth.user)
     if (member) {
-      return { ok: true, text: 'اطلاعات عضویت خوانده شد.', kind: 'ok', member }
+      return { ok: true, text: 'اطلاعات عضویت خوانده شد.', kind: 'ok', member, step: 'done' }
     }
     if (auth.memberErrorKind === 'expired') {
-      return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
+      return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED', step: 'member' }
     }
     if (auth.memberErrorKind === 'transient') {
-      return { ok: false, text: MEMBER_READ_FAILED_MESSAGE, kind: 'member-unread', retryMember: true, code: 'MEMBER_READ_TRANSIENT' }
+      return { ok: false, text: MEMBER_READ_FAILED_MESSAGE, kind: 'member-unread', retryMember: true, code: 'MEMBER_READ_TRANSIENT', step: 'member' }
     }
-    return { ok: false, text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE, kind: 'error', code: 'MEMBER_NOT_FOUND' }
+    return { ok: false, text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE, kind: 'error', code: 'MEMBER_NOT_FOUND', step: 'member' }
   } finally {
     auth.loading = false
   }
 }
 
-// پاک‌کردن کاملِ بقایای نشست (۲۵ نوامبر ۲۰۲۶): کلید اصلیِ supabase-js،
-// verifier کهنهٔ PKCE همان کلید، و stash قدیمیِ نسخه‌های پیشین.
-// عمداً فقط همین کلیدهای ویژهٔ همین سایت پاک می‌شوند — نه هیچ الگوی
-// `sb-*` و نه «supabase»: همین origin ‏(syfazel.github.io)‏ میزبان
-// sclack_A هم هست و نشستِ آن برنامه با کلید sb-* خودش زنده است؛
-// پاک‌کردن کورِ آن‌ها، یاسین را از sclack_A هم بیرون می‌انداخت.
-// نسخهٔ پیشین فقط کلید اصلی را پاک می‌کرد و verifier کهنه می‌توانست
-// مبادلهٔ PKCE بعدی (بازیابی رمز) را مسموم کند.
-// این تابع بی‌صدا است: مسیرِ انقضای واقعی خودش آن را صدا می‌زند و
-// کاربر دیگر لازم نیست دستی «نشست کهنه» را پاک کند.
-export async function clearAllAuthStorage() {
-  if (typeof window === 'undefined') return
-  const keys = [
-    SUPABASE_STORAGE_KEY,
-    `${SUPABASE_STORAGE_KEY}-code-verifier`,
-    'ml_v2_stashed_session'
-  ]
-  const stores = []
-  try {
-    if (window.localStorage) stores.push(window.localStorage)
-  } catch {}
-  try {
-    if (window.sessionStorage) stores.push(window.sessionStorage)
-  } catch {}
-  for (const store of stores) {
-    for (const key of keys) {
-      try {
-        store.removeItem(key)
-      } catch {}
-    }
-  }
-}
-
-// بقایای قدیمی که دیگر خوانده نمی‌شوند (فقط stash نسخه‌های پیشین):
-// در initAuth وقتی نشستی زنده نیست، بی‌صدا پاک می‌شوند تا ورود تازه
-// از بقایای کهنه شروع نشود. کلید اصلیِ نشست اینجا دست نمی‌خورد —
-// مبادلهٔ PKCE بازیابی ممکن است همان لحظه در حال تکمیل باشد.
-function clearLegacyAuthKeys() {
-  if (typeof window === 'undefined') return
-  try {
-    if (window.localStorage) window.localStorage.removeItem('ml_v2_stashed_session')
-  } catch {}
-  try {
-    if (window.sessionStorage) window.sessionStorage.removeItem('ml_v2_stashed_session')
-  } catch {}
-}
-
-// پاک‌کردن نشست کهنه و ورود تازه — حالا خودکار و بی‌صدا در مسیر انقضا
-// انجام می‌شود؛ این تابع فقط برای سازگاریِ فراخواننده‌های قدیمی مانده
-// است و دیگر دکمه‌ای در صفحهٔ ورود ندارد.
-export async function clearStaleSession() {
-  try {
-    if (sb) await sb.auth.signOut()
-  } catch {}
-  await clearAllAuthStorage()
-  auth.resetSession({ expired: false, notice: null })
-  return { ok: true, text: STALE_SESSION_CLEARED_MESSAGE, kind: 'ok' }
-}
+// ---------- شروع ----------
 
 export async function initAuth() {
   if (!sb) {
@@ -263,12 +287,14 @@ export async function initAuth() {
   }
 
   if (typeof window !== 'undefined') {
-    // تشخیص فرود بازیابی رمز، فقط از هش (۲۵ نوامبر ۲۰۲۶): نسخهٔ پیشین
-    // هر `?code=` در آدرس را «بازیابی» می‌شمرد و فرم «تعیین رمز تازه»
-    // را جای فرم ورود می‌نشاند — حتی برای پیوندی که code از جای دیگری
-    // آمده بود. فرود واقعیِ بازیابی همیشه هش #/reset-password را دارد
-    // (redirectTo همان است)؛ و اگر هش نباشد، رویداد PASSWORD_RECOVERY
-    // خودِ supabase-js (detectSessionInUrl) همان کار را می‌کند.
+    // تشخیص فرود بازیابی رمز، فقط از هش: هر `?code=` در آدرس، «بازیابی»
+    // شمرده نمی‌شود — فرود واقعیِ بازیابی همیشه هش #/reset-password را
+    // دارد (redirectTo همان است)؛ و اگر هش نباشد، رویداد
+    // PASSWORD_RECOVERY خودِ supabase-js همان کار را می‌کند.
+    // نکته: پیوند بازیابیِ فرستاده‌شده از داشبورد Supabase با کلاینت
+    // PKCE کار نمی‌کند، چون code_verifier فقط در مرورگری ذخیره می‌شود
+    // که درخواست بازیابی از همان‌جا (فرم «فراموشی رمز» سایت) فرستاده
+    // شده باشد؛ پس بازیابی همیشه باید از خود سایت آغاز شود، نه از داشبورد.
     const isRecoveryLanding =
       window.location.hash === '#/reset-password' ||
       window.location.hash.includes('type=recovery')
@@ -342,65 +368,76 @@ export async function initAuth() {
   }
 }
 
+// ---------- ورود ----------
+
 export async function signIn(email, password) {
   if (!sb) {
     return {
       ok: false,
       text: 'پیکربندی سرور احراز هویت در این بیلد موجود نیست.',
       kind: 'error',
-      code: 'AUTH_NO_CONFIG'
+      code: 'AUTH_NO_CONFIG',
+      step: 'password'
     }
   }
 
   const emailErr = validateEmail(email)
-  if (emailErr) return { ok: false, text: emailErr, kind: 'error', code: 'AUTH_VALIDATION' }
-  if (!password) return { ok: false, text: 'لطفاً رمز عبور را وارد کنید.', kind: 'error', code: 'AUTH_VALIDATION' }
+  if (emailErr) return { ok: false, text: emailErr, kind: 'error', code: 'AUTH_VALIDATION', step: 'password' }
+  if (!password) return { ok: false, text: 'لطفاً رمز عبور را وارد کنید.', kind: 'error', code: 'AUTH_VALIDATION', step: 'password' }
 
   const cleanEmail = email.trim().toLowerCase()
   auth.loading = true
   try {
+    // قدم ۱ — بررسی رمز عبور.
     const { data, error } = await sb.auth.signInWithPassword({
       email: cleanEmail,
       password
     })
-    if (error) return { ok: false, ...loginErrorMessage(error) }
+    if (error) {
+      diagnose('password', error)
+      return { ok: false, ...loginErrorMessage(error), step: 'password' }
+    }
 
     auth.user = data.user
     auth.sessionExpired = false
     auth.sessionNotice = null
 
+    // قدم ۲ — خواندن عضویت. موفقیت رمز و شکستِ این قدم دو وضعیت جدا
+    // هستند: نشست معتبر ذخیره شده است؛ «ورود ناموفق» دروغ است. فقط
+    // وقتی عضویت واقعاً پیدا نشد (not-found) یا نشستِ مرده تأیید شد،
+    // ورود رد می‌شود؛ در شکستِ گذرا، کاربر وارد شده می‌ماند و «تلاش
+    // دوباره» می‌زند.
     const member = await fetchMember(data.user)
     if (!member) {
-      // فاز ۳ (F6): موفقیت رمز و شکستِ خواندن عضویت دو وضعیت جدا هستند.
-      // نشست معتبر ذخیره شده است؛ «ورود ناموفق» دروغ است. فقط وقتی
-      // عضویت واقعاً پیدا نشد (not-found) یا نشست منقضی است، ورود رد
-      // می‌شود؛ در شکستِ گذرا، کاربر وارد شده می‌ماند و «تلاش دوباره»
-      // می‌زند.
       if (auth.memberErrorKind === 'transient') {
         return {
           ok: false,
           kind: 'member-unread',
           retryMember: true,
           code: 'MEMBER_READ_TRANSIENT',
-          text: MEMBER_READ_FAILED_MESSAGE
+          text: MEMBER_READ_FAILED_MESSAGE,
+          step: 'member'
         }
       }
       if (auth.memberErrorKind === 'expired') {
-        return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED' }
+        return { ok: false, text: SESSION_EXPIRED_MESSAGE, kind: 'expired', code: 'AUTH_SESSION_EXPIRED', step: 'member' }
       }
       return {
         ok: false,
         text: auth.memberError || MEMBER_NOT_FOUND_MESSAGE,
         kind: 'error',
-        code: 'MEMBER_NOT_FOUND'
+        code: 'MEMBER_NOT_FOUND',
+        step: 'member'
       }
     }
 
-    return { ok: true, text: 'ورود با موفقیت انجام شد.', kind: 'ok', member }
+    return { ok: true, text: 'ورود با موفقیت انجام شد.', kind: 'ok', member, step: 'done' }
   } finally {
     auth.loading = false
   }
 }
+
+// ---------- بازیابی و تغییر رمز ----------
 
 export async function requestPasswordReset(email) {
   if (!sb) {
@@ -418,7 +455,10 @@ export async function requestPasswordReset(email) {
   const { error } = await sb.auth.resetPasswordForEmail(cleanEmail, {
     redirectTo
   })
-  if (error) return { ok: false, ...authErrorMessage('ارسال پیوند بازیابی رمز', error) }
+  if (error) {
+    diagnose('password-reset', error)
+    return { ok: false, ...authErrorMessage('ارسال پیوند بازیابی رمز', error) }
+  }
 
   return {
     ok: true,
@@ -435,7 +475,10 @@ export async function completePasswordReset(nextPassword, confirmPassword) {
   if (bad) return { ok: false, text: bad, kind: 'error', code: 'AUTH_VALIDATION' }
 
   const { error } = await sb.auth.updateUser({ password: nextPassword })
-  if (error) return { ok: false, ...authErrorMessage('ثبت رمز تازه', error) }
+  if (error) {
+    diagnose('password-reset-complete', error)
+    return { ok: false, ...authErrorMessage('ثبت رمز تازه', error) }
+  }
 
   auth.recoveryMode = false
   if (typeof window !== 'undefined' && window.location.hash === '#/reset-password') {
@@ -462,10 +505,15 @@ export async function changePassword(currentPassword, nextPassword, confirmPassw
   if (verifyErr) return { ok: false, ...authErrorMessage('تأیید رمز فعلی', verifyErr) }
 
   const { error } = await sb.auth.updateUser({ password: nextPassword })
-  if (error) return { ok: false, ...authErrorMessage('تغییر رمز عبور', error) }
+  if (error) {
+    diagnose('password-change', error)
+    return { ok: false, ...authErrorMessage('تغییر رمز عبور', error) }
+  }
 
   return { ok: true, text: 'رمز عبور با موفقیت تغییر کرد.', kind: 'ok' }
 }
+
+// ---------- نمایش و خروج ----------
 
 export async function updateDisplayName(displayName) {
   if (!sb || !auth.canOperate || !auth.member) {
@@ -475,16 +523,23 @@ export async function updateDisplayName(displayName) {
   if (!clean) throw new Error('نام نمایشی را وارد کنید.')
   if (clean.length > 80) throw new Error('نام نمایشی نباید بیشتر از ۸۰ نویسه باشد.')
 
-  const { data, error } = await sb
-    .from('members')
-    .update({ display_name: clean, updated_at: new Date().toISOString() })
-    .eq('auth_id', auth.user.id)
-    .select('id, auth_id, role, display_name, username, created_at, updated_at')
-    .single()
+  const runUpdate = () =>
+    sb
+      .from('members')
+      .update({ display_name: clean, updated_at: new Date().toISOString() })
+      .eq('auth_id', auth.user.id)
+      .select('id, auth_id, role, display_name, username, created_at, updated_at')
+      .single()
+
+  let { data, error } = await runUpdate()
+  if (error && isUnauthorizedError(error)) {
+    // 401 گذرا: یک بار refresh و تکرار — نشست پاک نمی‌شود.
+    const refreshed = await refreshSessionOnce()
+    if (refreshed.ok) ({ data, error } = await runUpdate())
+  }
 
   if (error) {
-    if (isSessionExpiredError(error)) {
-      auth.resetSession({ expired: true, notice: SESSION_EXPIRED_MESSAGE })
+    if (isSessionExpiredError(error) && (await markExpiredIfDead())) {
       throw new Error(SESSION_EXPIRED_MESSAGE)
     }
     throw new Error('ذخیره نام نمایشی ناموفق بود.')

@@ -6,6 +6,7 @@ import { auth } from './auth-store.svelte.js'
 import {
   isSessionExpiredError,
   isUnauthorizedError,
+  isInvalidApiKeyError,
   SESSION_EXPIRED_MESSAGE
 } from './auth-errors.js'
 import { refreshSessionOnce } from './auth.js'
@@ -15,7 +16,12 @@ import { refreshSessionOnce } from './auth.js'
 // امتحان می‌شود و خطا فقط همان فراخوانی را برمی‌گرداند — کاربر وارد
 // مانده و تلاش بعدی با توکن تازه انجام می‌شود. فقط مرگ صریحِ
 // refresh token (isSessionExpiredErrorِ محدودشده) نشست را می‌بندد.
+// کلید API نامعتبر هم خطای پیکربندیِ سرور است، نه نشست: با نام خودش
+// برمی‌گردد تا دوباره پشت «منقضی» پنهان نشود.
 function handleApiError(error, fallbackMessage) {
+  if (isInvalidApiKeyError(error)) {
+    return 'پیکربندی ورود روی سرور خراب است (کلید ارتباط نامعتبر). لطفاً به استاد اطلاع دهید.'
+  }
   if (isSessionExpiredError(error)) {
     auth.resetSession({ expired: true, notice: SESSION_EXPIRED_MESSAGE })
     return SESSION_EXPIRED_MESSAGE

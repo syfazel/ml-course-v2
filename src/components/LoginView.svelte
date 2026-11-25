@@ -20,7 +20,8 @@
   let nextPassword = $state('')
   let confirmPassword = $state('')
   let busy = $state(false)
-  let feedback = $state(null) // { text, kind, code }
+  let feedback = $state(null) // { text, kind, code, step, status }
+  let copiedReport = $state(false)
   let videoEl = $state(null)
 
   // تیزر «رشتهٔ طلایی یادگیری» — تشخیص در لحظهٔ ساخت کامپوننت (نه onMount)
@@ -48,11 +49,12 @@
   async function handleLogin(e) {
     e.preventDefault()
     feedback = null
+    copiedReport = false
     busy = true
     try {
       const res = await signIn(email, password)
       if (!res.ok) {
-        feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false }
+        feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false, step: res.step || null }
         return
       }
       password = ''
@@ -66,6 +68,7 @@
   // بازخورد «وارد شدید ولی خواندن عضویت نشد». در صورت موفقیت، خانه.
   async function handleRetryMember() {
     feedback = null
+    copiedReport = false
     busy = true
     try {
       const res = await retryMemberRead()
@@ -73,9 +76,37 @@
         router.go('#/')
         return
       }
-      feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false }
+      feedback = { text: res.text, kind: res.kind, code: res.code || null, retryMember: res.retryMember || false, step: res.step || null }
     } finally {
       busy = false
+    }
+  }
+
+  function stepLabel(step) {
+    if (step === 'password') return 'قدم: بررسی ایمیل و رمز عبور'
+    if (step === 'member') return 'قدم: خواندن اطلاعات عضویت'
+    return null
+  }
+
+  // گزارش تشخیص برای فرستادن به استاد/میوز (۲۵ نوامبر ۲۰۲۶): باندل،
+  // قدمِ شکست، کد خطا و زمان — بدون ایمیل، بدون رمز، بدون توکن.
+  // اگر ورود باز هم نشد، همین گزارش را بفرست تا دقیقاً همان‌جا گرفته شود.
+  async function copyDiagnosisReport() {
+    if (!feedback?.code) return
+    const report = JSON.stringify({
+      bundle: APP_VERSION,
+      step: feedback.step || null,
+      code: feedback.code,
+      at: new Date().toISOString()
+    })
+    try {
+      await navigator.clipboard.writeText(report)
+      copiedReport = true
+      setTimeout(() => {
+        copiedReport = false
+      }, 2500)
+    } catch {
+      // کلیپ‌بورد در دسترس نیست؛ گزارش همان‌جا خوانا می‌ماند.
     }
   }
 
@@ -229,9 +260,16 @@
           class:text-red-900={feedback.kind === 'error'}
         >
           <p>{feedback.text}</p>
+          <!-- قدمِ شکست (۲۵ نوامبر ۲۰۲۶): رمز بود یا خواندن عضویت؟ -->
+          {#if stepLabel(feedback.step)}
+            <p class="mt-1 text-xs opacity-80">{stepLabel(feedback.step)}</p>
+          {/if}
           <!-- فاز ۴ (R-1): کد پایدار خطا کنار متن بازخورد. -->
           {#if feedback.code}
             <p class="font-code mt-1 text-[11px] opacity-80" dir="ltr">کد خطا: {feedback.code}</p>
+            <button type="button" class="btn-ml-ghost text-xs w-full mt-2" onclick={copyDiagnosisReport} disabled={busy}>
+              {copiedReport ? 'گزارش کپی شد' : 'کپی گزارش خطا برای استاد'}
+            </button>
           {/if}
           {#if feedback.retryMember}
             <!-- فاز ۳ (F6): وارد شده‌ای، فقط خواندن عضویت نشد — تلاش دوباره. -->

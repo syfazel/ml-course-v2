@@ -62,6 +62,16 @@ if ! grep -qF "$EXPECTED_URL" "$BUNDLE"; then
 fi
 ok "کانفیگ Supabase در باندل $(basename "$BUNDLE") پخته شده است"
 
+# 3b. کلید کامل در باندل است (۲۵ نوامبر ۲۰۲۶): کلید ناقصِ ۱۵ نویسه‌ایِ
+# «sb_publishable_» هم در باندل بود و همهٔ چک‌ها را رد می‌کرد، ولی
+# گیت‌وی هر ورود را با 401 «Invalid API key» می‌زد. باندل باید یک
+# کلید کامل (sb_publishable_ با دست‌کم ۲۰ نویسهٔ بعدش، یا JWT بلند)
+# داشته باشد؛ وگرنه دیپلوی متوقف می‌شود. مقدار کلید هرگز چاپ نمی‌شود.
+if ! grep -qE 'sb_publishable_[A-Za-z0-9_-]{20,}' "$BUNDLE" && ! grep -qE 'eyJ[A-Za-z0-9_-]{100,}\.eyJ[A-Za-z0-9_-]{100,}\.' "$BUNDLE"; then
+  fail "باندل کلید publishable کامل ندارد (فقط پیشوند کوتاه) — ورود با 401 گیت‌وی می‌شکند. کلید کامل را بازیابی کن و دوباره بیلد بگیر."
+fi
+ok "کلید publishable کامل در باندل $(basename "$BUNDLE") هست"
+
 # 4. همهٔ فایل‌های public/ در dist هستند
 MISSING=0
 while IFS= read -r -d '' f; do
