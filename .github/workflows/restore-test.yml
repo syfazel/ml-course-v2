@@ -86,7 +86,10 @@ jobs:
           # even though the public data itself restores fine.
           # A fresh container per run makes CREATE ROLE safe; the DO blocks
           # keep the step idempotent if it ever runs twice.
-          docker run --rm --network host \
+          # -i is REQUIRED: without it docker drops the heredoc stdin and
+          # psql exits 0 having run nothing (hit 2026-11-25: the stubs step
+          # went green while pg_restore still reported the same 56 errors).
+          docker run --rm -i --network host \
             -e PGPASSWORD="$PGPASSWORD" \
             postgres:17 \
             psql -h localhost -U postgres -d postgres \
@@ -109,6 +112,18 @@ jobs:
           END $$;
           SQL
           echo "supabase stubs created"
+          # Verify the stubs actually landed in the test DB (visible in the
+          # log): -c needs no stdin, so this cannot silently no-op.
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:17 \
+            psql -h localhost -U postgres -d postgres -tAc \
+              "SELECT 'role:' || rolname FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role','supabase_admin') ORDER BY 1"
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:17 \
+            psql -h localhost -U postgres -d postgres -tAc \
+              "SELECT 'auth.users table: ' || count(*) FROM pg_tables WHERE schemaname = 'auth' AND tablename = 'users'"
 
       - name: Restore public schema only
         env:
@@ -142,7 +157,9 @@ jobs:
           PGPASSWORD: testonly
         run: |
           set -euo pipefail
-          docker run --rm --network host \
+          # -i is REQUIRED here too: without it docker drops the heredoc
+          # stdin and psql exits 0 having checked nothing (false green).
+          docker run --rm -i --network host \
             -e PGPASSWORD="$PGPASSWORD" \
             postgres:17 \
             psql -h localhost -U postgres -d postgres \
