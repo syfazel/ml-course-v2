@@ -10,7 +10,7 @@
 //   T6: با prefers-reduced-motion: reduce ویدیو autoplay نمی‌شود و
 //       دکمهٔ توقف حرکت رندر نمی‌شود (رفتار reduced-motion حفظ شده).
 //   T7: کارت ورود سر جایش است و version.json هشِ همین کامیت را می‌گوید.
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 
 const CHROME = process.env.HOME + '/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome';
 const PORT = 9342;
@@ -168,7 +168,8 @@ try {
 
   // ===== نسخهٔ بیلد =====
   const version = await (await fetch(ORIGIN + '/version.json')).json().catch(() => null);
-  check('T7: version.json hash matches this commit', version?.hash === '33cbdc4', `hash=${version?.hash}`);
+  const headHash = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
+  check('T7: version.json hash matches this commit', version?.hash === headHash, `hash=${version?.hash} head=${headHash}`);
 
   check('X1: no unhandled page exceptions', pageExceptions.length === 0, pageExceptions.join(' | '));
 
