@@ -274,8 +274,9 @@ try {
     return true;
   })()`), 5000);
   const ytAfterEnd = ff1 && await waitFor(async () => await ytOutcome(), 30000);
+  const ytEndVia = ytAfterEnd ? await ytOutcome() : null;
   errs1 = await pageErrors();
-  check('smoke: با پایان پیش‌پخش، یوتیوب می‌آید', !!ytAfterEnd && errs1.length === 0, ytAfterEnd ? `via=${ytAfterEnd}${errs1.length ? ' | ' + errs1.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
+  check('smoke: با پایان پیش‌پخش، یوتیوب می‌آید', !!ytAfterEnd && errs1.length === 0, ytAfterEnd ? `via=${ytEndVia}${errs1.length ? ' | ' + errs1.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
 
   // مسیر ۲ — رد کردن: روی ویدیوی دوم، «رد کردن» یوتیوب را می‌آورد.
   await openVideoWithFakeSession('linreg');
@@ -287,8 +288,9 @@ try {
     return true;
   })()`);
   const ytAfterSkip = skipped && await waitFor(async () => await ytOutcome(), 30000);
+  const ytSkipVia = ytAfterSkip ? await ytOutcome() : null;
   const errs2 = await pageErrors();
-  check('smoke: با «رد کردن» پیش‌پخش، یوتیوب می‌آید', !!ytAfterSkip && errs2.length === 0, ytAfterSkip ? `via=${ytAfterSkip}${errs2.length ? ' | ' + errs2.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
+  check('smoke: با «رد کردن» پیش‌پخش، یوتیوب می‌آید', !!ytAfterSkip && errs2.length === 0, ytAfterSkip ? `via=${ytSkipVia}${errs2.length ? ' | ' + errs2.join(' | ') : ''}` : 'یوتیوب/پیام خطا دیده نشد');
 
   console.log(`\n==== ${results.filter((r) => r.ok).length}/${results.length} smoke checks passed ====`);
   code = results.every((r) => r.ok) ? 0 : 1;
