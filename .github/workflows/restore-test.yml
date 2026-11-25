@@ -1,0 +1,153 @@
+# تست restore بکاپ دیتابیس Supabase پروژه ml-course-v2 (پیشنهاد ۳)
+#
+# وضعیت: ورک‌فلو آمادهٔ اجراست، ولی هنوز هیچ آرتیفکت بکاپ سبزی نیست
+# (پیشنهاد ۱ — راز SUPABASE_DB_PASSWORD + اجرای دستی ورک‌فلوی backup —
+# با یاسین است). تا وقتی بکاپ سبز نشده، این ورک‌فلو را اجرا نکن؛ ورودی
+# backup_run_id شمارهٔ اجرای سبز ورک‌فلوی backup است (تب Actions ← backup).
+#
+# روش: آرتیفکت بکاپ را دانلود می‌کند، روی یک Postgres موقت postgres:16
+# در همین رانر restore می‌کند (فقط اسکیمای public)، و ۵ چک قبولی را می‌زند.
+# هیچ‌چیز به دیتابیس زنده وصل نمی‌شود — صفر ریسک برای دادهٔ زنده.
+# رانر موقت است: با پایان جاب، کانتینر Postgres و فایل‌ها از بین می‌روند.
+#
+# چرا restore روی پروژهٔ خراش Supabase انجام نمی‌شود: پلن Free دقیقاً
+# ۲ پروژهٔ فعال می‌دهد و یاسین ۲ پروژه دارد؛ پس هدف تست همین رانر است.
+name: restore-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_run_id:
+        description: 'Run ID of a green backup workflow run (Actions tab -> backup -> run number)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  restore-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: testonly
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+    steps:
+      - name: Download backup artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-course-v2-db-backup
+          path: backup
+          run-id: ${{ inputs.backup_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for test Postgres
+        run: |
+          set -euo pipefail
+          # Client tools come from the same postgres:16 image the backup
+          # workflow uses — no reliance on runner-installed psql.
+          # --network host: the service container is reachable on
+          # localhost:5432 through its mapped port.
+          for i in $(seq 1 30); do
+            if docker run --rm --network host postgres:16 \
+              pg_isready -h localhost -p 5432 -U postgres; then
+              echo "test postgres ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "test postgres did not become ready" >&2
+          exit 1
+
+      - name: Restore public schema only
+        env:
+          PGPASSWORD: testonly
+        run: |
+          set -euo pipefail
+          # Resolve the dump filename on the host first: a bare /backup/*.dump
+          # would NOT expand inside the container (docker passes args without
+          # a shell) and the host shell cannot see the mounted path either.
+          DUMP_FILE=$(ls backup/*.dump 2>/dev/null | head -n 1)
+          if [ -z "$DUMP_FILE" ]; then
+            echo "no .dump file found in backup/ — did the artifact download succeed?" >&2
+            ls -la backup/ || true
+            exit 1
+          fi
+          echo "restoring $DUMP_FILE"
+          # --schema=public: the dump covers the whole `postgres` database
+          # and includes Supabase internal schemas (auth/storage) that need
+          # Supabase-only extensions (e.g. pgjwt) absent from plain
+          # postgres:16. --no-owner: owner names differ on a fresh instance.
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            -v "$PWD/backup:/backup" \
+            postgres:16 \
+            pg_restore --schema=public --no-owner \
+              -h localhost -U postgres -d postgres "/backup/$(basename "$DUMP_FILE")"
+          echo "pg_restore done"
+
+      - name: Acceptance checks (all five must pass)
+        env:
+          PGPASSWORD: testonly
+        run: |
+          set -euo pipefail
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:16 \
+            psql -h localhost -U postgres -d postgres \
+              -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            n_tables int;
+            n_keys int;
+            n_members int;
+          BEGIN
+            -- 1) exactly 9 tables in public
+            SELECT count(*) INTO n_tables FROM pg_tables WHERE schemaname = 'public';
+            IF n_tables <> 9 THEN
+              RAISE EXCEPTION 'expected 9 tables in public, got %', n_tables;
+            END IF;
+            -- 2) 168 quiz answer keys (162 phase 2 + 6 day zero, per seed files)
+            SELECT count(*) INTO n_keys FROM quiz_answer_keys;
+            IF n_keys <> 168 THEN
+              RAISE EXCEPTION 'expected 168 quiz_answer_keys, got %', n_keys;
+            END IF;
+            -- 3) 2 members (teacher + student)
+            SELECT count(*) INTO n_members FROM members;
+            IF n_members <> 2 THEN
+              RAISE EXCEPTION 'expected 2 members, got %', n_members;
+            END IF;
+            -- 4) both functions exist in public
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = 'submit_quiz_attempt'
+            ) THEN
+              RAISE EXCEPTION 'function submit_quiz_attempt missing';
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = 'verify_studio_ticket'
+            ) THEN
+              RAISE EXCEPTION 'function verify_studio_ticket missing';
+            END IF;
+            -- 5) RLS enabled on every regular table in public
+            IF EXISTS (
+              SELECT 1 FROM pg_class
+              WHERE relnamespace = 'public'::regnamespace
+                AND relkind = 'r' AND NOT relrowsecurity
+            ) THEN
+              RAISE EXCEPTION 'some public table has RLS disabled';
+            END IF;
+            RAISE NOTICE 'restore-test checks passed: 9 tables, 168 keys, 2 members, both functions, RLS on';
+          END $$;
+          SQL
