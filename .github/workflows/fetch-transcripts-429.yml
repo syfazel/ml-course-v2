@@ -1,0 +1,85 @@
+# One-off helper: fetch English timedtext (json3) for the three subtitle
+# videos that keep getting HTTP 429 from the VM (rl-returns, q-learning,
+# human-level). Runs on a GitHub-hosted runner, i.e. a different egress IP
+# than the VM, so the YouTube rate limit on the VM's IP does not apply.
+# Manual trigger only (workflow_dispatch). Uploads whatever raw json3 files
+# it manages to fetch as an artifact; it never commits or deploys anything.
+name: fetch-transcripts-429
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install yt-dlp
+        run: pip install -q yt-dlp
+      - name: Fetch transcripts
+        run: |
+          python3 - <<'EOF'
+          import json, os, subprocess, time
+          OUT = 'transcripts-429'
+          os.makedirs(OUT, exist_ok=True)
+          VIDEOS = [
+              ('rl-returns', 'SgC6AZss478'),
+              ('q-learning', 'kEGAMppyWkQ'),
+              ('human-level', 'NUmbgp1h64E'),
+          ]
+          def fetch_one(key, vid):
+              base = os.path.join(OUT, key)
+              attempts = [
+                  (['--write-subs', '--write-auto-subs'], 'android'),
+                  (['--write-auto-subs'], 'android'),
+              ]
+              if key == 'human-level':
+                  attempts += [
+                      (['--write-subs', '--write-auto-subs'], 'web'),
+                      (['--write-auto-subs'], 'ios'),
+                  ]
+              for attempt, (extra, client) in enumerate(attempts):
+                  cmd = ['yt-dlp', '--no-warnings', '--skip-download'] + extra + [
+                      '--sub-langs', 'en', '--sub-format', 'json3',
+                      '--extractor-args', f'youtube:player_client={client}',
+                      '-o', base, f'https://www.youtube.com/watch?v={vid}']
+                  r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                  cand = base + '.en.json3'
+                  if os.path.exists(cand) and os.path.getsize(cand) > 100:
+                      try:
+                          raw = json.load(open(cand, encoding='utf-8'))
+                          if raw.get('events'):
+                              os.rename(cand, os.path.join(OUT, f'{key}-en-raw.json'))
+                              print(f'{key}: OK events={len(raw["events"])} client={client}', flush=True)
+                              return True
+                          print(f'{key}: json3 parsed but 0 events ({client})', flush=True)
+                      except Exception as e:
+                          print(f'{key}: json3 unparsable ({client}): {e}', flush=True)
+                  else:
+                      tail = (r.stderr or r.stdout or '')[-300:].strip().replace('\n', ' | ')
+                      print(f'{key}: no json3 ({attempt} {client}): {tail}', flush=True)
+                  time.sleep(3)
+              return False
+          failed = []
+          for key, vid in VIDEOS:
+              print(f'--- {key} {vid} ---', flush=True)
+              if not fetch_one(key, vid):
+                  print(f'{key}: BLOCKED', flush=True)
+                  failed.append(key)
+              time.sleep(5)
+          print('FAILED: ' + (', '.join(failed) if failed else 'none'), flush=True)
+          EOF
+      - name: Upload raw transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcripts-429
+          path: transcripts-429/*.json
+          if-no-files-found: warn
